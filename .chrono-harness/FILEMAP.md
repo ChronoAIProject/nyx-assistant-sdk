@@ -25,3 +25,11 @@
 | `browser/nyx-widget.js` | esbuild 打包挂件、样式和直接依赖 | 无构建静态网页按固定版本从 CDN 或自身站点加载 | 一个压缩脚本 |
 | `scripts/build-widget.mjs` | 浏览器入口、esbuild、依赖许可证 | 生成实际分发给静态网站的单文件脚本 | 一次本地打包 |
 | `test/authorization.test.ts` | 设备授权、有效服务、宿主身份与模拟 HTTP | Node 验证拒绝错误交付并撤销子凭据，复用原申请 | 未知 |
+
+| `src/credential-storage.ts` | Web Crypto、idb-keyval、站点授权绑定 | BrowserAuthorization 加密恢复可撤销子凭据 | 一条源级密钥和每份授权一条密文 |
+| `server/server.mjs` | HTTP、固定 NyxID 上游、站点来源 | 静态挂件授权、流式 Responses 和恢复 | 聊天前一次 self 核验 |
+| `server/Dockerfile` | Node 和 server.mjs | chrono-cd 独立非 root 容器 | 镜像构建成本未知 |
+| `test/server.test.mjs` | server.mjs、受控的上游 | Node 检查子凭据契约和转发行为 | 未知 |
+| `.github/workflows/server-image.yml` | Dockerfile、转发测试 | 发布 linux/amd64 GHCR 镜像供 chrono-cd 按摘要部署 | 未知 |
+| `test/credential-storage.test.ts` | Web Crypto、模拟 IndexedDB、credential-storage.ts | 检验并发密钥创建、不可导出及授权隔离 | 未知 |
+| `server/README.md` | server 入口和 chrono-cd 配置 | 运维者配置固定上游和接入站点 | 未知 |

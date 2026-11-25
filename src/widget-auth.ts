@@ -1,4 +1,5 @@
 import { NyxIDConnection } from "./connection.ts";
+import { isSealed, openCredential, sealCredential } from "./credential-storage.ts";
 import { z } from "zod";
 
 const serviceSlug = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
@@ -31,7 +32,7 @@ export interface BrowserAuthorizationOptions {
   clientLabel: string;
   /** Supply tab-local storage to resume a pending request after reloading. */
   storage?: Storage;
-  /** Origin-local storage for the child credential. Each restored grant is checked with NyxID. */
+  /** Origin-local storage for the encrypted child credential. The non-exportable key lives in IndexedDB. Each restored grant is checked with NyxID. */
   credentialStorage?: Storage;
 }
 
@@ -92,26 +93,43 @@ export class BrowserAuthorization {
 
   async restore(signal: AbortSignal) {
     const store = this.#options.credentialStorage;
-    const credential = store?.getItem(this.credentialStorageKey);
-    if (!credential) return undefined;
+    if (!store) return undefined;
+    let record = store.getItem(this.credentialStorageKey);
+    if (!record) return undefined;
+    let credential: string | undefined;
+    if (isSealed(record)) {
+      credential = await openCredential(this.credentialStorageKey, record);
+      if (!credential) {
+        this.#forget(record);
+        return undefined;
+      }
+    } else {
+      // Migrate a grant written by alpha.4 before any network operation.
+      credential = record;
+      const sealed = await sealCredential(this.credentialStorageKey, credential);
+      signal.throwIfAborted();
+      if (store.getItem(this.credentialStorageKey) !== record) return undefined;
+      store.setItem(this.credentialStorageKey, sealed);
+      record = sealed;
+    }
     const response = await fetch(new URL("api/v1/auth/agent-key/self", this.#base), {
       credentials: "omit", redirect: "error", cache: "no-store", signal,
       headers: { Authorization: "Bearer " + credential },
     });
     if (response.status === 401) {
-      this.#forget(credential);
+      this.#forget(record);
       return undefined;
     }
     if (!response.ok) throw Error("无法核验已保存的 NyxID 授权（HTTP " + response.status + "）。");
     const identity = await response.json();
     signal.throwIfAborted();
-    if (store?.getItem(this.credentialStorageKey) !== credential) return undefined;
-    return this.#grant({ ...identity, credential }, signal, false);
+    if (store.getItem(this.credentialStorageKey) !== record) return undefined;
+    return this.#grant({ ...identity, credential }, signal, record);
   }
 
-  #forget(credential: string) {
+  #forget(record: string) {
     const store = this.#options.credentialStorage;
-    if (store?.getItem(this.credentialStorageKey) === credential) store.removeItem(this.credentialStorageKey);
+    if (store?.getItem(this.credentialStorageKey) === record) store.removeItem(this.credentialStorageKey);
   }
 
   #saved() {
@@ -180,7 +198,7 @@ export class BrowserAuthorization {
     }
   }
 
-  async #grant(delivery: unknown, signal: AbortSignal, save = true) {
+  async #grant(delivery: unknown, signal: AbortSignal, record?: string) {
     const { credential } = z.object({ credential: z.string().min(1) }).parse(delivery);
     const revoke = async () => {
       const response = await fetch(new URL("api/v1/auth/agent-key/self", this.#base), {
@@ -188,7 +206,7 @@ export class BrowserAuthorization {
         headers: { Authorization: "Bearer " + credential },
       });
       if (!response.ok && response.status !== 401) throw Error("NyxID 未确认撤销，请重试断开授权。");
-      this.#forget(credential);
+      if (record) this.#forget(record);
     };
     const parsed = z.object({ credential_id: z.string().min(1), api_key: keySummary }).safeParse(delivery);
     const key = parsed.data?.api_key;
@@ -202,8 +220,12 @@ export class BrowserAuthorization {
       await revoke();
       throw Error("本次浏览器授权已撤销。请选择请求的账号、proxy 权限和页面列出的服务。");
     }
-    if (save) {
-      try { this.#options.credentialStorage?.setItem(this.credentialStorageKey, credential); }
+    if (!record && this.#options.credentialStorage) {
+      try {
+        record = await sealCredential(this.credentialStorageKey, credential);
+        signal.throwIfAborted();
+        this.#options.credentialStorage.setItem(this.credentialStorageKey, record);
+      }
       catch { await revoke(); throw Error("浏览器无法保存此授权，请检查站点存储设置。"); }
     }
     const connection = new NyxIDConnection(this.#base, (input, init) => {
