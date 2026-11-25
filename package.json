@@ -1,0 +1,38 @@
+{
+  "name": "@chronoai/nyx-assistant-sdk",
+  "version": "0.1.0-alpha.1",
+  "description": "NyxID client SDK for exposing a host application's context and tools to an authorized service",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./nyx-chat": {
+      "types": "./dist/nyx-chat.d.ts",
+      "import": "./dist/nyx-chat.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "prepare": "npm run build",
+    "example:web": "npm run build && node examples/web/serve.mjs",
+    "example:macos": "npm run build && swift -swift-version 5 examples/macos/Window.swift"
+  },
+  "dependencies": {
+    "eventsource-parser": "3.0.6",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.2",
+    "typescript": "5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChronoAIProject/nyx-assistant-sdk.git"
+  }
+}

@@ -1,0 +1,21 @@
+# NyxID 客户端 SDK
+
+#1 的使用方是接入 NyxID 服务的宿主开发者。SDK 维护者负责下表中的包、契约和验收入口。示例操作只在运行的宿主内产生结果。成本列为本机观察值或未知。
+
+| 文件 | 输入与直接依赖 | 使用方及操作 | 成本 |
+|---|---|---|---|
+| `package.json` | 包导出、脚本、固定依赖 | npm 构建、测试和安装 SDK | 未知 |
+| `package-lock.json` | npm 包及其完整性 | npm ci 重建依赖 | 未知 |
+| `tsconfig.json` | TypeScript 源码 | npm run build 生成模块和类型 | 未知 |
+| `.gitignore` | npm 的本地输出路径 | Git 排除可重建安装和产物 | 未知 |
+| `src/connection.ts` | 宿主提供的 NyxID URL 与授权 fetch | 服务适配器通过 NyxID 代理调用服务 | 每次调用一个 HTTP 请求 |
+| `src/index.ts` | 服务接口、上下文、Zod 工具定义及处理函数 | 各宿主创建实例，订阅、发送、执行和恢复 | 取决于宿主处理函数 |
+| `src/nyx-chat.ts` | 连接、核心契约、Responses SSE 和已保存响应 | Nyx 聊天适配器执行或续接一轮 | 每步一次请求，实际推理成本未知 |
+| `test/host.test.ts` | 核心与模拟服务 | Node 验证实例、权限、调用与恢复 | 未知 |
+| `test/nyx-chat.test.ts` | 核心、连接、适配器与模拟 HTTP | Node 验证线上的请求形状及结果关联 | 未知 |
+| `examples/web/index.html` | 筛选与聊天表单 | 网页用户查看行数、发送请求 | 未知 |
+| `examples/web/app.js` | HTML、SDK 与宿主表格状态 | 网页用户读取和修改筛选 | 未知 |
+| `examples/web/serve.mjs` | HTML、浏览器模块、esbuild 及测试服务配置 | 本机开发者运行网页示例 | 一次内存打包，推理成本未知 |
+| `examples/macos/Window.swift` | AppKit、当前窗口选择、独立进程的结果 | macOS 用户执行和核对原生列表修改 | 每个窗口一个 Node 进程 |
+| `examples/macos/bridge.mjs` | 标准输入输出、SDK、已授权服务 | 原生窗口调用 NyxID 并处理结果 | 未知 |
+| `README.md` | 公共导出和上述入口 | 接入方安装、注册工具和复现示例 | 未知 |
