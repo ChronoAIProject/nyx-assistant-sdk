@@ -17,7 +17,7 @@ const action = z.strictObject({
   requestId: z.string(), name: z.string(), arguments: z.record(z.string(), z.unknown()),
 });
 const marker = "```nyx-host-call";
-const instructions = [
+export const nyxHostInstructions = [
   "You are chatting with the user in their current application.",
   "The JSON input identifies the host instance, current context, available host tools and user message or tool result.",
   "For a requested host action, choose one currently advertised tool. End your reply with exactly one fenced nyx-host-call JSON block.",
@@ -27,7 +27,7 @@ const instructions = [
   "When you have the result, answer the user normally without a control block. Never print a control block as a quotation or example.",
 ].join("\n");
 
-function decodeTerminal(value: unknown, request: TurnRequest): ServiceReply {
+export function decodeNyxReply(value: unknown, request: Pick<TurnRequest, "requestId" | "conversationId">): ServiceReply {
   const response = storedResponse.parse(value);
   if (request.conversationId && response.conversation.id !== request.conversationId) {
     throw new Error("NyxID returned a different conversation");
@@ -58,7 +58,7 @@ export function createNyxChatService(connection: NyxIDConnection): NyxIDService 
         if (!res.ok) throw new Error(`NyxID response lookup returned HTTP ${res.status}`);
         const original = storedResponse.parse(await res.json());
         if (original.id !== prior.id || original.conversation.id !== prior.conversationId) throw new Error("NyxID lookup identity changed");
-        const reply = decodeTerminal(original, turn);
+        const reply = decodeNyxReply(original, turn);
         observed.delete(turn.requestId);
         return reply;
       }
@@ -66,12 +66,12 @@ export function createNyxChatService(connection: NyxIDConnection): NyxIDService 
         method: "POST", signal, redirect: "error", cache: "no-store",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream", "Idempotency-Key": turn.requestId },
         body: JSON.stringify({
-          model: "nyxagent/chat", instructions, store: true, stream: true,
+          model: "nyxagent/chat", instructions: nyxHostInstructions, store: true, stream: true,
           input: JSON.stringify(turn), ...(turn.conversationId ? { conversation: turn.conversationId } : {}),
         }),
       });
       if (!res.ok) throw new Error(`NyxID turn returned HTTP ${res.status}`);
-      if (res.headers.get("content-type")?.startsWith("application/json")) return decodeTerminal(await res.json(), turn);
+      if (res.headers.get("content-type")?.startsWith("application/json")) return decodeNyxReply(await res.json(), turn);
       if (!res.body || !res.headers.get("content-type")?.startsWith("text/event-stream")) throw new Error("Expected NyxID response stream");
       let reply: ServiceReply | undefined;
       const parser = createParser({ onEvent(event) {
@@ -87,7 +87,7 @@ export function createNyxChatService(connection: NyxIDConnection): NyxIDService 
           }
           observed.set(turn.requestId, { id, conversationId: conversation.id });
           if (type === "response.failed") throw new Error("NyxID reported a failed turn");
-          if (type === "response.completed") reply = decodeTerminal(frame.response, turn);
+          if (type === "response.completed") reply = decodeNyxReply(frame.response, turn);
         }
       } });
       const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();

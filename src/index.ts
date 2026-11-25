@@ -65,7 +65,8 @@ export class AssistantHost {
   #pending?: Pending;
   #conversationId?: string;
 
-  constructor(service: NyxIDService, context: () => Json = () => null) {
+  constructor(service: NyxIDService, context: () => Json = () => null, conversationId?: string) {
+    this.#conversationId = conversationId;
     this.#service = service;
     this.#context = context;
   }
