@@ -9,10 +9,12 @@
 在 HTML 加入一行脚本，页面会出现「Nyx 助手」按钮。脚本也随 npm 包提供，可复制 `browser/nyx-widget.js` 到自己的静态站点。
 
 ```html
-<script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.1.0-alpha.3/browser/nyx-widget.js" data-proxy="/"></script>
+<script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.1.0-alpha.4/browser/nyx-widget.js" data-proxy="/"></script>
 ```
 
-`data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。直连需要 NyxID 的浏览器跨域策略允许该站点、服务请求的 Authorization 与 Idempotency-Key 请求头。托管 NyxID 的跨域策略由服务运营者配置。授权子凭据仅驻留内存，点「断开授权」后挂件会向 NyxID 请求撤销。
+`data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。直连需要 NyxID 的浏览器跨域策略允许该站点、服务请求的 Authorization 与 Idempotency-Key 请求头。托管 NyxID 的跨域策略由服务运营者配置。挂件默认在内存中保管浏览器子凭据。设置 `data-storage="local"` 后，凭据保存在该网站源的 localStorage，刷新后挂件向 NyxID 的 `/auth/agent-key/self` 核验当前身份和服务权限。其他同源标签页可以使用同一授权，各自拥有独立的页面工具和聊天实例。点「断开授权」会撤销子凭据并清理本地保存。该源上执行的脚本能读取 localStorage，应只在信任其脚本的网站启用。
+
+`data-services` 用逗号分隔此应用需要的服务，默认是 `llm-nyx,chrono-llm-public`。`data-key-source="new"` 在 NyxID 授权页预填创建专用 Key，默认预选已有 Key。批准后的实际权限由挂件按此服务列表核验。未完成的申请保存在当前标签页，刷新后点连接可以继续原申请。自有 UI 可从 `@chronoai/nyx-assistant-sdk/agent-key` 导入 `BrowserAuthorization`，传入 NyxID 的 `base`、登录页 `verificationOrigin`、`services` 和 `clientLabel`；`connect(signal, showLink)` 提供授权链接，`restore(signal)` 恢复并核验已存凭据。返回的 `connection` 可直接创建聊天适配器。
 
 挂件继承页面字体。可在页面样式中设置颜色、圆角和层级，脚本的 `data-position="left"` 将入口移到左下。Enter 发送，Shift+Enter 换行，Escape 收起。收起再打开可继续原会话。
 
@@ -54,7 +56,7 @@ npm pack
 接入方也可以安装已经发布的固定版本。
 
 ```sh
-npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0-alpha.3/chronoai-nyx-assistant-sdk-0.1.0-alpha.3.tgz
+npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0-alpha.4/chronoai-nyx-assistant-sdk-0.1.0-alpha.4.tgz
 ```
 
 运行端需要 Fetch、Web Streams、Web Crypto 和 AbortSignal.any。应用可以使用自己的聊天界面。

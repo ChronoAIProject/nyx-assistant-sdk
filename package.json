@@ -1,6 +1,6 @@
 {
   "name": "@chronoai/nyx-assistant-sdk",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "NyxID client SDK for exposing a host application's context and tools to an authorized service",
   "type": "module",
   "exports": {
@@ -11,6 +11,10 @@
     "./nyx-chat": {
       "types": "./dist/nyx-chat.d.ts",
       "import": "./dist/nyx-chat.js"
+    },
+    "./agent-key": {
+      "types": "./dist/widget-auth.d.ts",
+      "import": "./dist/widget-auth.js"
     }
   },
   "files": [
