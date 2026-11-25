@@ -1,6 +1,6 @@
 import { AssistantHost, NyxIDConnection, z } from "./index.ts";
 import { createNyxChatService } from "./nyx-chat.ts";
-import { authorizeBrowser } from "./widget-auth.ts";
+import { BrowserAuthorization } from "./widget-auth.ts";
 import { widgetStyle } from "./widget-style.ts";
 
 class NyxAssistantElement extends HTMLElement {
@@ -8,6 +8,7 @@ class NyxAssistantElement extends HTMLElement {
   #host?: AssistantHost;
   #login?: AbortController;
   #revoke?: () => Promise<void>;
+  #authorization?: BrowserAuthorization;
   #busy = false;
   get host() {
     return this.#host;
@@ -66,10 +67,20 @@ class NyxAssistantElement extends HTMLElement {
       this.bind(
         new NyxIDConnection(new URL(this.dataset.proxy || "/", location.href)),
       );
-    } else this.#controls();
+    } else {
+      this.#controls();
+      if (this.dataset.storage === "local") void this.#connect(true);
+    }
+    window.addEventListener("storage", this.#storageChanged);
     window.addEventListener("pagehide", this.#pagehide);
     window.addEventListener("pageshow", this.#pageshow);
   }
+  #storageChanged = (event: StorageEvent) => {
+    if (this.#persistent && (event.key === null || event.key === this.#authorization?.credentialStorageKey)) {
+      void this.#release();
+      void this.#connect(true);
+    }
+  };
   #pagehide = () => this.#release();
   #pageshow = (event: PageTransitionEvent) => {
     if (event.persisted) {
@@ -78,6 +89,7 @@ class NyxAssistantElement extends HTMLElement {
     }
   };
   disconnectedCallback() {
+    window.removeEventListener("storage", this.#storageChanged);
     window.removeEventListener("pagehide", this.#pagehide);
     window.removeEventListener("pageshow", this.#pageshow);
     this.#release();
@@ -95,7 +107,7 @@ class NyxAssistantElement extends HTMLElement {
     const revoke = this.#revoke;
     this.#revoke = undefined;
     this.#controls();
-    return revoke?.().catch(() => {
+    return (this.#persistent ? undefined : revoke?.())?.catch(() => {
       if (!this.#host)
         this.#el(".status").textContent =
           "请在 NyxID 核对浏览器子凭据的撤销状态。";
@@ -118,20 +130,35 @@ class NyxAssistantElement extends HTMLElement {
       }),
     );
   }
-  async #connect() {
+  #persistent = false;
+  #createFlow() {
+    const base = new URL(this.dataset.nyxid || "https://nyx.chrono-ai.fun");
+    let storage: Storage | undefined;
+    let credentialStorage: Storage | undefined;
+    if (this.dataset.storage === "local") credentialStorage = localStorage;
+    this.#persistent = Boolean(credentialStorage);
+    try { storage = sessionStorage; } catch { /* Storage is optional for this visit. */ }
+    const services = (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
+    return new BrowserAuthorization({
+      base, verificationOrigin: this.dataset.verificationOrigin || base.origin, services, storage, credentialStorage,
+      clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
+    });
+  }
+  async #connect(restoreOnly = false) {
     if (this.#login || this.#host) return;
     const login = new AbortController();
     this.#login = login;
     this.#controls();
     this.#el(".status").textContent = "正在连接 NyxID…";
     try {
-      const base = new URL(this.dataset.nyxid || "https://nyx.chrono-ai.fun");
-      new NyxIDConnection(base);
-      base.pathname = base.pathname.replace(/\/?$/, "/");
-      const grant = await authorizeBrowser(
-        base,
-        new URL(this.dataset.verificationOrigin || base.origin).origin,
-        login.signal,
+      const flow = this.#authorization ??= this.#createFlow();
+      const restored = await flow.restore(login.signal);
+      if (login.signal.aborted) return;
+      if (restoreOnly && !restored) {
+        this.#el(".status").textContent = "";
+        return;
+      }
+      const grant = restored ?? await flow.connect(login.signal,
         (url, code) => {
           const link = this.#el<HTMLAnchorElement>(".verify");
           link.href = url.href;
@@ -141,7 +168,7 @@ class NyxAssistantElement extends HTMLElement {
         },
       );
       if (login.signal.aborted) {
-        await grant.revoke();
+        if (!restored && !this.#persistent) await grant.revoke();
         return;
       }
       this.bind(grant.connection);
@@ -161,7 +188,15 @@ class NyxAssistantElement extends HTMLElement {
     }
   }
   async #disconnect() {
+    this.#authorization?.cancel();
+    const revoke = this.#persistent ? this.#revoke : undefined;
     await this.#release();
+    if (revoke) {
+      try { await revoke(); }
+      catch {
+        this.#el(".status").textContent = "NyxID 未确认撤销。重新连接后可重试断开。";
+      }
+    }
     this.#el(".connect").focus();
   }
   #controls() {
@@ -227,7 +262,7 @@ const script = document.currentScript as HTMLScriptElement | null;
 function mount() {
   if (document.querySelector("nyx-assistant")) return;
   const widget = document.createElement("nyx-assistant");
-  for (const name of ["data-nyxid", "data-verification-origin", "data-proxy"]) {
+  for (const name of ["data-nyxid", "data-verification-origin", "data-proxy", "data-services", "data-key-source", "data-storage"]) {
     if (script?.hasAttribute(name))
       widget.setAttribute(name, script.getAttribute(name)!);
   }
