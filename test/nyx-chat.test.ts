@@ -4,6 +4,15 @@ import { z } from "zod";
 import { AssistantHost, NyxIDConnection } from "../src/index.ts";
 import { createNyxChatService } from "../src/nyx-chat.ts";
 
+test("invokes a fetch supplied by the browser as a standalone function", async () => {
+  const transport = async function (this: unknown) {
+    assert.equal(this, undefined);
+    return new Response();
+  };
+  const connection = new NyxIDConnection("https://example.test", transport);
+  await connection.request("llm-nyx", ["v1", "responses"]);
+});
+
 function response(id: string, text: string) {
   return { id, conversation: { id: "conv_1" }, status: "completed",
     output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text }] }] };
