@@ -5,7 +5,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { build } from "esbuild";
 import { NyxIDConnection } from "@chronoai/nyx-assistant-sdk";
-const localOrigin = "http://127.0.0.1:4178";
+let localOrigin;
 const page = await readFile(new URL("./index.html", import.meta.url));
 const bundle = await build({ entryPoints: [new URL("./app.js", import.meta.url).pathname], bundle: true, format: "esm", write: false });
 const upstream = process.env.NYXID_BASE_URL && process.env.NYXID_AGENT_KEY
@@ -15,7 +15,7 @@ const upstream = process.env.NYXID_BASE_URL && process.env.NYXID_AGENT_KEY
       return fetch(url, { ...init, headers });
     }) : undefined;
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
   const end = (status, body = "") => { res.statusCode = status; res.end(body); };
   try {
     if (req.headers.host !== new URL(localOrigin).host) return end(403);
@@ -47,4 +47,8 @@ createServer(async (req, res) => {
   } catch {
     if (!res.headersSent) end(502); else res.destroy();
   }
-}).listen(4178, "127.0.0.1", () => console.log(localOrigin));
+});
+server.listen(0, "127.0.0.1", () => {
+  localOrigin = `http://127.0.0.1:${server.address().port}`;
+  console.log(localOrigin);
+});

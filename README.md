@@ -14,7 +14,13 @@ npm test
 npm pack
 ```
 
-接入方可以安装生成的 `chronoai-nyx-assistant-sdk-0.1.0-alpha.1.tgz`。运行端需要 Fetch、Web Streams、Web Crypto 和 AbortSignal.any。应用可以使用自己的聊天界面。
+接入方也可以安装已经发布的固定版本。
+
+```sh
+npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0-alpha.2/chronoai-nyx-assistant-sdk-0.1.0-alpha.2.tgz
+```
+
+运行端需要 Fetch、Web Streams、Web Crypto 和 AbortSignal.any。应用可以使用自己的聊天界面。
 
 ```ts
 import { AssistantHost, NyxIDConnection, z } from "@chronoai/nyx-assistant-sdk";
@@ -62,5 +68,18 @@ host.dispose(); // 关闭窗口、注销或切换身份时销毁该实例。
 | macOS AppKit | `npm run example:macos` | 两个窗口各运行一个 SDK 实例。选择列表项，要求助手读取并标记，检查原生复选框和另一个窗口的状态。需要 Swift 和 Node.js。 |
 
 原生示例由 AppKit 执行读写，Node 子进程通过每个窗口独立的标准输入输出管道运行相同的 SDK 与 Nyx 聊天适配器。窗口关闭后子进程结束。[网页示例](examples/web/app.js) · [原生窗口](examples/macos/Window.swift)
+
+### 原生窗口的消息契约
+
+每行是一条 UTF-8 JSON 消息。以读取当前选区为例，窗口向子进程写入第一行，子进程从标准输出发出第二行，窗口执行后写回第三行。桥接器将结果关联到原服务调用，并把同一会话的最终回答交给窗口。下例的调用编号由子进程生成。
+
+```jsonl
+{"type":"send","text":"读一下当前选区。"}
+{"type":"call","id":"c1","name":"read_selection","args":{}}
+{"type":"result","id":"c1","result":{"ok":true,"value":{"id":"Beta","marked":false}}}
+{"type":"answer","text":"当前选中 Beta，尚未标记。"}
+```
+
+宿主拒绝时用同一编号返回 `{"ok":false,"code":"read_only","message":"此窗口为只读模式。"}`。断线后，桥接器用 `{"type":"error","text":"…","pending":true}` 表示原请求待核对，窗口用 `{"type":"resume"}` 继续。关闭窗口或切换登录身份时关闭原管道并释放实例，新的窗口和身份建立自己的管道。工具名称、参数 JSON Schema 与对应的原生处理函数由接入方声明。
 
 仓库协作工具的安装与配置见[项目说明](.chrono-harness/USAGE.md)。

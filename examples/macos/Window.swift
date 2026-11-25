@@ -51,7 +51,9 @@ final class ListWindow: NSObject, NSWindowDelegate {
         try process.run()
         DispatchQueue.global().async { [weak self] in
             var buffer = Data()
-            while let bytes = try? responses.fileHandleForReading.read(upToCount: 8192), !bytes.isEmpty {
+            while true {
+                let bytes = responses.fileHandleForReading.availableData
+                if bytes.isEmpty { break }
                 buffer.append(bytes)
                 while let newline = buffer.firstIndex(of: 10) {
                     let line = buffer[..<newline]

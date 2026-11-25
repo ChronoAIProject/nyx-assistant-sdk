@@ -24,6 +24,7 @@ export class NyxIDConnection {
     const url = new URL(this.#base);
     url.pathname = [url.pathname.replace(/\/$/, ""), "api/v1/proxy/s", service, ...path.map(encodeURIComponent)].join("/");
     url.search = query?.toString() ?? "";
-    return this.#fetch(url, { ...init, redirect: "error" });
+    const request = this.#fetch;
+    return request(url, { ...init, redirect: "error" });
   }
 }
