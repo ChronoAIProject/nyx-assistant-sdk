@@ -15,7 +15,12 @@
 | `test/nyx-chat.test.ts` | 核心、连接、适配器与模拟 HTTP | Node 验证线上的请求形状及结果关联 | 未知 |
 | `examples/web/index.html` | 筛选与聊天表单 | 网页用户查看行数、发送请求 | 未知 |
 | `examples/web/app.js` | HTML、SDK 与宿主表格状态 | 网页用户读取和修改筛选 | 未知 |
-| `examples/web/serve.mjs` | HTML、浏览器模块、esbuild 及测试服务配置 | 本机开发者运行网页示例 | 一次内存打包，推理成本未知 |
+| `examples/web/serve.mjs` | HTML、页面工具、已打包挂件及测试服务配置 | 本机开发者运行网页示例 | 静态文件读取，推理成本未知 |
 | `examples/macos/Window.swift` | AppKit、当前窗口选择、独立进程的结果 | macOS 用户执行和核对原生列表修改 | 每个窗口一个 Node 进程 |
 | `examples/macos/bridge.mjs` | 标准输入输出、SDK、已授权服务 | 原生窗口调用 NyxID 并处理结果 | 未知 |
 | `README.md` | 公共导出和上述入口 | 接入方安装、注册工具和复现示例 | 未知 |
+| `src/widget.ts` | 公共 SDK、Nyx 聊天适配器、浏览器授权接口、挂件样式 | 静态页用户打开挂件、授权、发送、恢复和切换身份 | 单次加载浏览器包 |
+| `src/widget-style.ts` | Shadow DOM、宿主 CSS 自定义属性 | 网页维护者调整挂件外观，用户在窄屏和键盘下操作 | 随浏览器包加载 |
+| `src/widget-auth.ts` | NyxID Agent Key 的设备授权和子凭据 | 挂件用户同意已有 Key 授权，断开时撤销子凭据 | 每次授权和会话各自按需请求 |
+| `browser/nyx-widget.js` | esbuild 打包挂件、样式和直接依赖 | 无构建静态网页按固定版本从 CDN 或自身站点加载 | 一个压缩脚本 |
+| `scripts/build-widget.mjs` | 浏览器入口、esbuild、依赖许可证 | 生成实际分发给静态网站的单文件脚本 | 一次本地打包 |

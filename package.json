@@ -1,6 +1,6 @@
 {
   "name": "@chronoai/nyx-assistant-sdk",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "NyxID client SDK for exposing a host application's context and tools to an authorized service",
   "type": "module",
   "exports": {
@@ -14,10 +14,11 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "browser/nyx-widget.js"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/build-widget.mjs",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "prepare": "npm run build",
     "example:web": "npm run build && node examples/web/serve.mjs",
