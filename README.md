@@ -1,14 +1,66 @@
-# Chrono Harness 仓库起点
+# NyxID Assistant SDK
 
-点击 GitHub 的 **Use this template → Create a new repository**，创建并克隆你的仓库。安装 mise 后，在仓库根目录执行以下命令。
+让网页或原生客户端调用用户已授权的 NyxID 服务，并向服务中的 Agent 开放当前页面或窗口的操作。NyxID 管理身份、凭据、服务连接及访问范围。宿主决定可读的上下文、可执行的工具和每次执行的实际权限。服务适配器负责消息格式、会话和恢复。
+
+首个适配器使用 Metaverse 已接通的 `llm-nyx` 服务与 `nyxagent/chat` 模型。Nyx 聊天和 CMA 都是 NyxID 服务，各自使用独立授权与会话。首版联调 Nyx 聊天。[项目目标与验收条件](https://github.com/ChronoAIProject/nyx-assistant-sdk/issues/1)
+
+## 接入当前页面
+
+开发环境使用 Node.js 22.18 或更高版本。仓库根目录运行以下命令生成 ESM 和类型声明。
 
 ```sh
-mise trust
-mise run harness-setup
+npm ci
+npm test
+npm pack
 ```
 
-模板默认在每次安装时为所选组织工具查找最新公开测试版，并校验当前平台的 SHA-256。所有分支和直接检出的提交使用同一默认通道。可用 Copier 为各工具分别保存正式版、测试版或精确标签，也可在单次安装时覆盖这些选择。[混合选版与单次覆盖示例](.chrono-harness/USAGE.md#保存各工具的版本选择) · [默认工具发行进度](https://github.com/chrono-harness/chrono-harness-main/issues/15)
+接入方可以安装生成的 `chronoai-nyx-assistant-sdk-0.1.0-alpha.1.tgz`。运行端需要 Fetch、Web Streams、Web Crypto 和 AbortSignal.any。应用可以使用自己的聊天界面。
 
-首次安装会从 origin 识别 GitHub 仓库与默认分支。运行 `mise current` 查看实际采用的版本。AI 打开根目录的 AGENTS.md 或 CLAUDE.md 即可阅读默认工作规则。
+```ts
+import { AssistantHost, NyxIDConnection, z } from "@chronoai/nyx-assistant-sdk";
+import { createNyxChatService } from "@chronoai/nyx-assistant-sdk/nyx-chat";
 
-默认安装全部组件。工具选装、增补本仓指令和 Issue 路线图见[使用说明](.chrono-harness/USAGE.md)。已有项目使用 [Copier 配方](https://github.com/chrono-harness/chrono-harness-copier)。组件清单和开发入口见 [Chrono Harness](https://github.com/chrono-harness/chrono-harness-main)。
+// 已有的登录或同源后端提供 authenticatedFetch，按当前身份附加凭据。
+const connection = new NyxIDConnection(nyxidBaseUrl, authenticatedFetch);
+const host = new AssistantHost(createNyxChatService(connection), () => ({
+  view: "tickets",
+}));
+
+const remove = host.registerTool({
+  name: "read_filter",
+  description: "读取工单表当前的筛选条件与显示行数。",
+  parameters: z.object({}),
+  execute: () => ({
+    ok: true,
+    value: { filter: table.currentFilter(), rows: table.visibleRowCount() },
+  }),
+});
+
+const answer = await host.send("当前有多少条工单？");
+showMessage(answer);
+remove();       // 该工具随宿主功能卸载。
+host.dispose(); // 关闭窗口、注销或切换身份时销毁该实例。
+```
+
+每个窗口和登录身份创建一个独立实例。处理函数应在执行时读取当前业务状态，检查权限，异步写入前检查传入的 AbortSignal。已拒绝的业务操作返回 `{ok:false, code, message}`，只有确认成功后才返回 `{ok:true, value}`。上下文会进入模型输入，应只包含当前请求需要的数据。
+
+## 服务与工具契约
+
+- `NyxIDConnection.request(service, path, init)` 调用该 NyxID 实例的服务代理。服务与路径使用独立的标识和片段。凭据由宿主提供，重定向交给调用方处理。
+- `AssistantHost`向适配器提交 `TurnRequest`。它包含请求 ID、实例 ID、已知会话 ID、上下文快照、工具的名称、用途与 JSON Schema，以及用户消息或带调用 ID 的执行结果。所有工具参数和结果都可用 JSON 表示。
+- `NyxIDService.turn` 接收请求、取消信号及流式文本回调。它返回同一会话的最终回答，或一项包含调用 ID、工具名称和完整参数的调用。工具执行完后 SDK 将实际结果送回原会话。后续服务可以各自实现这一接口。
+- `llm-nyx` 的 Responses 接口支持文本。当前适配器在已完成的助手回复中读取带本次请求 ID 的 `nyx-host-call` JSON 块，用真实响应 ID 关联结果，并在下一次请求中把结果作为应用数据传回。格式由适配器统一，宿主只注册业务函数。该映射属于 SDK 约定。[NyxAgent Responses 契约](https://github.com/ChronoAIProject/NxyAgent/blob/46d6d252d836139e1b8d145e12e91b5151e52b37/docs/api.md#L113)
+- `subscribe` 提供流式文本和已执行的工具结果。`stopWaiting()` 停止本次观察。`pendingRequestId` 表示还有请求需要核对，`resume()` 优先读取已知原响应，尚无响应 ID 时使用同一个幂等键及原请求。当前宿主和适配器在内存中保留恢复状态，进程退出后的业务结果应由宿主自己的持久记录核对。
+
+## 运行示例
+
+把已有测试授权注入环境变量 `NYXID_BASE_URL` 与 `NYXID_AGENT_KEY`。测试 Key 需要能调用 `llm-nyx` 及选定模型的上游服务。网页开发服务器只绑定回环地址，将凭据保留在本机进程内。普通网页和原生示例都从仓库根目录运行。
+
+| 宿主 | 命令 | 可观察行为 |
+|---|---|---|
+| 独立网页 | `npm run example:web` | 打开终端显示的网址，要求助手读取筛选再切换为待处理，检查实际行数。勾选只读模式可验证宿主拒绝。 |
+| macOS AppKit | `npm run example:macos` | 两个窗口各运行一个 SDK 实例。选择列表项，要求助手读取并标记，检查原生复选框和另一个窗口的状态。需要 Swift 和 Node.js。 |
+
+原生示例由 AppKit 执行读写，Node 子进程通过每个窗口独立的标准输入输出管道运行相同的 SDK 与 Nyx 聊天适配器。窗口关闭后子进程结束。[网页示例](examples/web/app.js) · [原生窗口](examples/macos/Window.swift)
+
+仓库协作工具的安装与配置见[项目说明](.chrono-harness/USAGE.md)。
