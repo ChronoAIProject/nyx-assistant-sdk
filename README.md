@@ -4,6 +4,43 @@
 
 首个适配器使用 Metaverse 已接通的 `llm-nyx` 服务与 `nyxagent/chat` 模型。Nyx 聊天和 CMA 都是 NyxID 服务，各自使用独立授权与会话。首版联调 Nyx 聊天。[项目目标与验收条件](https://github.com/ChronoAIProject/nyx-assistant-sdk/issues/1)
 
+## 给静态网页添加聊天挂件
+
+在 HTML 加入一行脚本，页面会出现「Nyx 助手」按钮。脚本也随 npm 包提供，可复制 `browser/nyx-widget.js` 到自己的静态站点。
+
+```html
+<script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.1.0-alpha.3/browser/nyx-widget.js" data-proxy="/"></script>
+```
+
+`data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。直连需要 NyxID 的浏览器跨域策略允许该站点、服务请求的 Authorization 与 Idempotency-Key 请求头。托管 NyxID 的跨域策略由服务运营者配置。授权子凭据仅驻留内存，点「断开授权」后挂件会向 NyxID 请求撤销。
+
+挂件继承页面字体。可在页面样式中设置颜色、圆角和层级，脚本的 `data-position="left"` 将入口移到左下。Enter 发送，Shift+Enter 换行，Escape 收起。收起再打开可继续原会话。
+
+```css
+nyx-assistant {
+  --nyx-accent: #315747;
+  --nyx-accent-text: white;
+  --nyx-radius: 12px;
+  --nyx-surface: #fffdf6;
+  --nyx-text: #1b2922;
+}
+```
+
+需要让助手操作页面时，在挂件脚本执行前监听 `nyx-ready`。每次绑定登录身份会提供新的 host。返回的函数用于撤销这一项工具。页面标题和语言默认进入上下文，业务数据由宿主工具按需提供。
+
+```html
+<script>
+  document.addEventListener("nyx-ready", ({ detail: { host, z } }) => {
+    host.registerTool({
+      name: "read_filter",
+      description: "读取当前筛选值",
+      parameters: z.object({}),
+      execute: () => ({ ok: true, value: document.querySelector("#filter").value })
+    });
+  });
+</script>
+```
+
 ## 接入当前页面
 
 开发环境使用 Node.js 22.18 或更高版本。仓库根目录运行以下命令生成 ESM 和类型声明。
@@ -17,7 +54,7 @@ npm pack
 接入方也可以安装已经发布的固定版本。
 
 ```sh
-npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0-alpha.2/chronoai-nyx-assistant-sdk-0.1.0-alpha.2.tgz
+npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0-alpha.3/chronoai-nyx-assistant-sdk-0.1.0-alpha.3.tgz
 ```
 
 运行端需要 Fetch、Web Streams、Web Crypto 和 AbortSignal.any。应用可以使用自己的聊天界面。

@@ -5,6 +5,7 @@
 <title>NyxID 工单筛选</title>
 <style>
   :root { font: 16px/1.5 Inter, system-ui, sans-serif; color: #182325; background: #f5f6f3; }
+  nyx-assistant { --nyx-accent: #295d51; --nyx-radius: 14px; }
   main { max-width: 46rem; margin: 6vh auto; padding: 1.5rem; }
   h1 { font-size: 2rem; }
   table { width: 100%; border-collapse: collapse; margin: 1rem 0 2rem; }
@@ -19,10 +20,7 @@
   <span id="count" aria-live="polite"></span>
   <table><thead><tr><th>工单</th><th>状态</th></tr></thead><tbody id="rows"></tbody></table>
   <label><input id="readonly" type="checkbox"> 只读模式</label>
-  <h2>Nyx 助手</h2>
-  <form><label>消息 <input type="text" id="prompt" required value="读一下当前筛选，然后只显示待处理工单，告诉我实际还有几条。"></label> <button id="send">发送</button></form>
-  <output id="answer" aria-live="polite"></output>
-  <button type="button" id="resume" hidden>核对原请求</button>
 </main>
-<script type="module" src="/app.js"></script>
+<script defer src="/app.js"></script>
+<script defer src="/nyx-widget.js" data-proxy="/"></script>
 </html>
