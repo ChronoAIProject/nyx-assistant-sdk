@@ -1,0 +1,3 @@
+[tasks.harness-setup]
+description = "Install selected tools and prepare this checkout"
+run = ["sh .chrono-harness/install-tools.sh", "sh .chrono-harness/setup.sh {{ os() }}-{{ arch() }}"]
