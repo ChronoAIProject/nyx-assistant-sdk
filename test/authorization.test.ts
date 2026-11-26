@@ -1,3 +1,4 @@
+import "fake-indexeddb/auto";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { BrowserAuthorization } from "../src/widget-auth.ts";
@@ -33,9 +34,13 @@ test("a restored child is checked against live NyxID permissions before use", as
   });
   const grant = await flow.restore(new AbortController().signal);
   assert.equal(grant?.ownerId, "person");
-  assert.equal(local.getItem(flow.credentialStorageKey), "child-only");
+  const encrypted = local.getItem(flow.credentialStorageKey)!;
+  assert.match(encrypted, /^nyx-sealed:v1:/);
+  assert.ok(!encrypted.includes("child-only"));
+  const reloaded = await flow.restore(new AbortController().signal);
+  assert.equal(reloaded?.keyId, "test-key");
   await grant!.revoke();
-  assert.deepEqual(methods, ["GET","DELETE"]);
+  assert.deepEqual(methods, ["GET","GET","DELETE"]);
   assert.equal(flow.hasSavedGrant,false);
 });
 test("a changed scope revokes only the delivered child, a transient failure preserves it", async t => {

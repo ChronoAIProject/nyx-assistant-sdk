@@ -1,6 +1,6 @@
 {
   "name": "@chronoai/nyx-assistant-sdk",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "NyxID client SDK for exposing a host application's context and tools to an authorized service",
   "type": "module",
   "exports": {
@@ -30,10 +30,12 @@
   },
   "dependencies": {
     "eventsource-parser": "3.0.6",
+    "idb-keyval": "6.3.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "esbuild": "0.27.2",
+    "fake-indexeddb": "6.2.8",
     "typescript": "5.9.3"
   },
   "repository": {

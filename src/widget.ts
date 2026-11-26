@@ -8,6 +8,7 @@ class NyxAssistantElement extends HTMLElement {
   #host?: AssistantHost;
   #login?: AbortController;
   #revoke?: () => Promise<void>;
+  #revoking = false;
   #authorization?: BrowserAuthorization;
   #busy = false;
   get host() {
@@ -95,6 +96,17 @@ class NyxAssistantElement extends HTMLElement {
     this.#release();
   }
   #release() {
+    const revoke = this.#revoking ? undefined : this.#revoke;
+    this.#revoke = undefined;
+    this.#revoking = false;
+    this.#clearView();
+    return (this.#persistent ? undefined : revoke?.())?.catch(() => {
+      if (!this.#host)
+        this.#el(".status").textContent =
+          "请在 NyxID 核对浏览器子凭据的撤销状态。";
+    });
+  }
+  #clearView() {
     this.#login?.abort();
     this.#login = undefined;
     this.#host?.dispose();
@@ -104,23 +116,20 @@ class NyxAssistantElement extends HTMLElement {
     this.#el<HTMLTextAreaElement>("textarea").value = "";
     this.#el(".status").textContent = "";
     this.#el(".verify").hidden = true;
-    const revoke = this.#revoke;
-    this.#revoke = undefined;
     this.#controls();
-    return (this.#persistent ? undefined : revoke?.())?.catch(() => {
-      if (!this.#host)
-        this.#el(".status").textContent =
-          "请在 NyxID 核对浏览器子凭据的撤销状态。";
-    });
   }
   /** Bind a credential-bound connection on login or identity change. */
   bind(connection: NyxIDConnection) {
+    this.#bind(connection);
+  }
+  #bind(connection: NyxIDConnection, revoke?: () => Promise<void>) {
     void this.#release();
     const host = new AssistantHost(createNyxChatService(connection), () => ({
       title: document.title,
       language: document.documentElement.lang,
     }));
     this.#host = host;
+    this.#revoke = revoke;
     this.#controls();
     this.dispatchEvent(
       new CustomEvent("nyx-ready", {
@@ -145,7 +154,7 @@ class NyxAssistantElement extends HTMLElement {
     });
   }
   async #connect(restoreOnly = false) {
-    if (this.#login || this.#host) return;
+    if (this.#login || this.#host || this.#revoke) return;
     const login = new AbortController();
     this.#login = login;
     this.#controls();
@@ -165,15 +174,14 @@ class NyxAssistantElement extends HTMLElement {
           link.textContent = "打开 NyxID 授权页";
           link.hidden = false;
           this.#el(".status").textContent = "在 NyxID 核对授权码 " + code;
+          this.#controls();
         },
       );
       if (login.signal.aborted) {
         if (!restored && !this.#persistent) await grant.revoke();
         return;
       }
-      this.bind(grant.connection);
-      this.#revoke = grant.revoke;
-      this.#controls();
+      this.#bind(grant.connection, grant.revoke);
       if (!this.#el(".panel").hidden) this.#el("textarea").focus();
     } catch (error) {
       if (!login.signal.aborted)
@@ -188,21 +196,38 @@ class NyxAssistantElement extends HTMLElement {
     }
   }
   async #disconnect() {
+    const revoke = this.#revoke;
+    if (this.#revoking || (!revoke && this.#el(".verify").hidden)) return;
     this.#authorization?.cancel();
-    const revoke = this.#persistent ? this.#revoke : undefined;
-    await this.#release();
-    if (revoke) {
-      try { await revoke(); }
-      catch {
-        this.#el(".status").textContent = "NyxID 未确认撤销。重新连接后可重试断开。";
-      }
+    if (!revoke) {
+      void this.#release();
+      this.#el(".connect").focus();
+      return;
     }
-    this.#el(".connect").focus();
+    this.#revoking = true;
+    this.#clearView();
+    this.#el(".status").textContent = "正在撤销 NyxID 授权…";
+    let failed = false;
+    try {
+      await revoke();
+    } catch {
+      failed = true;
+    }
+    if (this.#revoke !== revoke) return;
+    this.#revoking = false;
+    if (!failed) this.#revoke = undefined;
+    this.#el(".status").textContent = failed ? "NyxID 未确认撤销，请重试断开授权。" : "";
+    this.#controls();
+    if (!this.#el(".panel").hidden) this.#el(failed ? ".disconnect" : ".connect").focus();
   }
   #controls() {
     const pending = Boolean(this.#host?.pendingRequestId);
-    this.#el(".connect").hidden = Boolean(this.#host || this.#login);
-    this.#el(".disconnect").hidden = !this.#revoke && !this.#login;
+    const waitingForApproval = Boolean(this.#login && !this.#el(".verify").hidden);
+    const disconnect = this.#el<HTMLButtonElement>(".disconnect");
+    this.#el(".connect").hidden = Boolean(this.#host || this.#login || this.#revoke);
+    disconnect.hidden = !this.#revoke && !waitingForApproval;
+    disconnect.disabled = this.#revoking;
+    disconnect.textContent = waitingForApproval ? "停止等待授权" : "断开授权";
     this.#el("form").hidden = !this.#host;
     this.#el<HTMLButtonElement>(".send").disabled = this.#busy || pending;
     this.#el(".resume").hidden = this.#busy || !pending;
@@ -212,7 +237,10 @@ class NyxAssistantElement extends HTMLElement {
     const launch = this.#el(".launch");
     launch.hidden = open;
     launch.setAttribute("aria-expanded", String(open));
-    const focus = this.#host ? "textarea" : this.#login ? ".close" : ".connect";
+    let focus = ".connect";
+    if (this.#host) focus = "textarea";
+    else if (this.#login || this.#revoking) focus = ".close";
+    else if (this.#revoke) focus = ".disconnect";
     this.#el(open ? focus : ".launch").focus();
   }
   #message(text: string, isUser: boolean) {
