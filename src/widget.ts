@@ -2,6 +2,7 @@ import { AssistantHost, NyxIDConnection, z } from "./index.ts";
 import { createNyxChatService } from "./nyx-chat.ts";
 import { BrowserAuthorization } from "./widget-auth.ts";
 import { widgetStyle } from "./widget-style.ts";
+import { renderAssistantMarkdown } from "./markdown.ts";
 
 class NyxAssistantElement extends HTMLElement {
   #root = this.attachShadow({ mode: "open" });
@@ -20,7 +21,7 @@ class NyxAssistantElement extends HTMLElement {
 
   constructor() {
     super();
-    // Only static markup is parsed. Page titles, messages and service output use textContent.
+    // Only the static widget shell is assigned here.
     this.#root.innerHTML = `<style>${widgetStyle}</style>
       <button class="launch" part="launcher" type="button" aria-expanded="false" aria-controls="panel"><span class="bubble" part="launcher-icon" aria-hidden="true"></span>Nyx 助手</button>
       <section hidden id="panel" class="panel" part="panel" role="dialog" aria-labelledby="title">
@@ -261,13 +262,25 @@ class NyxAssistantElement extends HTMLElement {
     this.#el(open ? focus : ".launch").focus();
   }
   #message(text: string, isUser: boolean) {
-    const chat = this.#el(".chat"),
-      message = document.createElement("p");
-    message.className = isUser ? "msg user" : "msg";
+    const chat = this.#el(".chat");
+    const follow = isUser || chat.scrollHeight - chat.clientHeight - chat.scrollTop <= 4;
+    const message = document.createElement(isUser ? "p" : "div");
+    message.className = isUser ? "msg user" : "msg markdown";
     message.setAttribute("aria-label", isUser ? "你" : "Nyx");
-    message.textContent = text;
+    if (isUser) message.textContent = text;
+    else {
+      try {
+        message.append(renderAssistantMarkdown(text));
+      } catch {
+        // A rendering failure must still leave the confirmed source readable.
+        message.classList.remove("markdown");
+        message.style.whiteSpace = "pre-wrap";
+        message.textContent = text;
+      }
+    }
     chat.append(message);
-    chat.scrollTop = chat.scrollHeight;
+    if (isUser) chat.scrollTop = chat.scrollHeight;
+    else if (follow) chat.scrollTop += message.getBoundingClientRect().top - chat.getBoundingClientRect().top;
   }
   async #send(resume: boolean) {
     const host = this.#host,
@@ -288,8 +301,8 @@ class NyxAssistantElement extends HTMLElement {
     try {
       const answer = await (resume ? host.resume() : host.send(text));
       if (host !== this.#host) return;
-      this.#message(answer, false);
       this.#el(".status").textContent = "";
+      this.#message(answer, false);
     } catch (error) {
       if (host === this.#host)
         this.#el(".status").textContent =
