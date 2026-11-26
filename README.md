@@ -4,7 +4,7 @@
 
 首个适配器使用 Metaverse 已接通的 `llm-nyx` 服务与 `nyxagent/chat` 模型。Nyx 聊天和 CMA 都是 NyxID 服务，各自使用独立授权与会话。首版联调 Nyx 聊天。[项目目标与验收条件](https://github.com/ChronoAIProject/nyx-assistant-sdk/issues/1)
 
-SDK 官网未连接时显示「连接 NyxID」。连接成功后，首页列出这把 Key 已授权的服务，点击「在 NyxID 调整权限」即可打开对应 Key 的管理页。在右下角助手的「已授权服务」中也可以查看服务及管理链接。可用自然语言查询或切换工单筛选。也可点击免登录演练的固定指令。两种方式都使用同一组宿主工具，开启只读模式后会拒绝写入。[SDK 官网](https://chronoaiproject.github.io/nyx-assistant-sdk/)
+SDK 官网的「免登录试用」可直接读取或切换演示工单的筛选条件。自由对话需要在「Nyx 助手」中授权 NyxID。连接成功后，首页和助手中会显示已授权的服务及对应 Key 的权限管理入口。两者使用同一组宿主工具，开启只读模式后会拒绝写入。[中文官网](https://chronoaiproject.github.io/nyx-assistant-sdk/zh/) · [English](https://chronoaiproject.github.io/nyx-assistant-sdk/en/)
 
 ## 给静态网页添加聊天挂件
 
@@ -22,7 +22,7 @@ SDK 官网未连接时显示「连接 NyxID」。连接成功后，首页列出�
 
 有网站登录的宿主可通过 `data-owner-id` 核验当前个人账号，`data-catalog-services` 指定须与 NyxID 目录身份匹配的服务。按账号或工作区切换时重新创建元素。设置 `data-session` 为当前工作区编号后，已验证的同一浏览器子凭据可在当前标签页恢复最近 30 条聊天记录。发生刷新时，已取得响应编号的请求从原响应读取；旧窗口未确认的页面操作提示用户核对。宿主可监听 `nyx-recovery` 打开已有聊天面板。
 
-在主视图中放置 `<nyx-assistant>` 元素，可指定挂件位置。将连接配置写在该元素上，用页面 CSS 设置其定位。
+在主视图中放置 `<nyx-assistant>` 元素，可指定挂件位置。将连接配置写在该元素上，用页面 CSS 设置其定位。设置 `lang="en"` 可使用英文挂件界面，默认使用简体中文。
 
 控制台页面可选 `appearance="console"`，通过 `--nyx-mark: url(...)` 引用自己的标识，通过 `--nyx-panel-surface` 指定面板背景。若宿主提供 `<button type="button" slot="prompt">读取当前视图</button>`，已连接且对话为空时可点击填入输入框，再编辑和发送。
 

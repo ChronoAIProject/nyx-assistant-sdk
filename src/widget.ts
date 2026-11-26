@@ -4,11 +4,13 @@ import { createNyxChatService, lookupNyxReply } from "./nyx-chat.ts";
 import { BrowserAuthorization, type PreviousGrant } from "./widget-auth.ts";
 import { widgetStyle } from "./widget-style.ts";
 import { renderAssistantMarkdown } from "./markdown.ts";
+import { widgetMessages } from "./widget-messages.ts";
 
 type BrowserGrant = Awaited<ReturnType<BrowserAuthorization["connect"]>>;
 
 export class NyxAssistantElement extends HTMLElement {
   #root = this.attachShadow({ mode: "open" });
+  #language: keyof typeof widgetMessages = "zh";
   #host?: AssistantHost;
   #login?: { controller: AbortController; restoreOnly: boolean };
   #grant?: BrowserGrant;
@@ -29,29 +31,33 @@ export class NyxAssistantElement extends HTMLElement {
   get z() {
     return z;
   }
+  get #copy() {
+    return widgetMessages[this.#language];
+  }
 
   constructor() {
     super();
     // Only the static widget shell is assigned here.
     this.#root.innerHTML = `<style>${widgetStyle}</style>
-      <button class="launch" part="launcher" type="button" aria-expanded="false" aria-controls="panel"><span class="bubble" part="launcher-icon" aria-hidden="true"></span>Nyx 助手</button>
+      <button class="launch" part="launcher" type="button" aria-expanded="false" aria-controls="panel"><span class="bubble" part="launcher-icon" aria-hidden="true"></span><span class="launch-label"></span></button>
       <section hidden id="panel" class="panel" part="panel" role="dialog" aria-labelledby="title">
-        <header part="header"><h2 id="title"><span class="identity" aria-hidden="true"></span>Nyx 助手</h2><button class="disconnect" part="secondary-action" type="button" hidden>断开授权</button>
-          <button class="close" part="close" type="button" aria-label="收起助手">×</button></header>
-        <details class="access" hidden><summary>已授权服务</summary>
-          <p></p><a target="_blank" rel="noopener noreferrer">在 NyxID 调整权限 ↗</a></details>
-        <div class="chat" role="log" aria-label="聊天记录" aria-live="polite"></div>
+        <header part="header"><h2 id="title"><span class="identity" aria-hidden="true"></span><span class="title-label"></span></h2><button class="disconnect" part="secondary-action" type="button" hidden></button>
+          <button class="close" part="close" type="button">×</button></header>
+        <details class="access" hidden><summary></summary>
+          <p></p><a target="_blank" rel="noopener noreferrer"></a></details>
+        <div class="chat" role="log" aria-live="polite"></div>
         <div class="starters" hidden><slot name="prompt"></slot></div>
         <div class="controls"><p class="status" role="status"></p>
           <a class="verify" hidden target="_blank" rel="noopener noreferrer"></a>
-          <p class="connect-hint">连接 NyxID 后，可以向助手提问或操作当前页面。</p>
-          <button class="connect" part="primary-action" type="button">连接 NyxID</button>
-          <form part="composer" hidden><textarea rows="1" part="input" aria-label="消息" placeholder="给 Nyx 发消息…" required></textarea>
-            <button class="send" part="primary-action send" type="submit" aria-label="发送"><span class="send-label">发送</span><span class="send-icon" aria-hidden="true">↑</span></button></form>
-          <button class="resume" hidden type="button">核对原请求</button>
-          <button class="reset" hidden type="button">开始新对话</button>
+          <p class="connect-hint"></p>
+          <button class="connect" part="primary-action" type="button"></button>
+          <form part="composer" hidden><textarea rows="1" part="input" required></textarea>
+            <button class="send" part="primary-action send" type="submit"><span class="send-label"></span><span class="send-icon" aria-hidden="true">↑</span></button></form>
+          <button class="resume" hidden type="button"></button>
+          <button class="reset" hidden type="button"></button>
         </div>
       </section>`;
+    this.#localize();
     this.#el(".launch").onclick = () => this.#open(this.#el(".panel").hidden);
     const prompts = this.#el<HTMLSlotElement>('slot[name="prompt"]');
     prompts.onslotchange = () => this.#controls();
@@ -80,7 +86,7 @@ export class NyxAssistantElement extends HTMLElement {
     };
     this.#el(".reset").onclick = () => {
       if (!this.#session || !this.#connection || this.#busy ||
-          !window.confirm("已执行的操作仍然有效。确认已核对结果并开始新的对话？")) return;
+          !window.confirm(this.#copy.confirmReset)) return;
       const session = this.#session;
       session.save({ messages: [] });
       this.#bind(this.#connection, this.#grant, session);
@@ -98,7 +104,27 @@ export class NyxAssistantElement extends HTMLElement {
   #el<T extends HTMLElement = HTMLElement>(selector: string): T {
     return this.#root.querySelector<T>(selector)!;
   }
+  #localize() {
+    const copy = this.#copy;
+    this.#el(".launch-label").textContent = copy.title;
+    this.#el(".title-label").textContent = copy.title;
+    this.#el(".close").setAttribute("aria-label", copy.close);
+    this.#el(".chat").setAttribute("aria-label", copy.chat);
+    this.#el(".access summary").textContent = copy.services;
+    this.#el(".access a").textContent = copy.manage;
+    this.#el(".connect-hint").textContent = copy.hint;
+    this.#el(".connect").textContent = copy.connect;
+    const input = this.#el<HTMLTextAreaElement>("textarea");
+    input.setAttribute("aria-label", copy.message);
+    input.placeholder = copy.placeholder;
+    this.#el(".send").setAttribute("aria-label", copy.send);
+    this.#el(".send-label").textContent = copy.send;
+    this.#el(".resume").textContent = copy.resume;
+    this.#el(".reset").textContent = copy.reset;
+  }
   connectedCallback() {
+    this.#language = this.lang.toLowerCase().split("-")[0] === "en" ? "en" : "zh";
+    this.#localize();
     if (this.getAttribute("layout") === "embedded") {
       this.#el(".panel").hidden = false;
       this.#el(".panel").setAttribute("role", "region");
@@ -142,7 +168,7 @@ export class NyxAssistantElement extends HTMLElement {
     return (this.#authorization?.persistent ? undefined : revoke?.())?.catch(() => {
       if (!this.#host)
         this.#el(".status").textContent =
-          "请在 NyxID 核对浏览器子凭据的撤销状态。";
+          this.#copy.verifyRevoke;
     });
   }
   #clearView() {
@@ -184,7 +210,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#host = host;
     this.#grant = grant;
     if (grant) {
-      this.#el(".access p").textContent = grant.access.services.join("、");
+      this.#el(".access p").textContent = new Intl.ListFormat(this.#language).format(grant.access.services);
       this.#el<HTMLAnchorElement>(".access a").href = grant.access.managementUrl;
       this.#el(".access").hidden = false;
     }
@@ -206,7 +232,7 @@ export class NyxAssistantElement extends HTMLElement {
     try { storage = sessionStorage; } catch { /* Storage is optional for this visit. */ }
     const services = (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
     return new BrowserAuthorization({
-      base, verificationOrigin: this.dataset.verificationOrigin || base.origin, services, storage, credentialStorage,
+      base, verificationOrigin: this.dataset.verificationOrigin || base.origin, services, storage, credentialStorage, language: this.#language,
       previousGrant: this.previousGrant, ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined, catalogServices: this.dataset.catalogServices?.split(","), clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
     });
   }
@@ -229,7 +255,7 @@ export class NyxAssistantElement extends HTMLElement {
     const { signal } = controller;
     this.#login = login;
     this.#controls();
-    this.#el(".status").textContent = "正在连接 NyxID…";
+    this.#el(".status").textContent = this.#copy.connecting;
     try {
       const flow = this.#authorization ??= this.#createFlow();
       let grant = restoreOnly ? await flow.restore(signal) : undefined;
@@ -237,9 +263,9 @@ export class NyxAssistantElement extends HTMLElement {
         (url, code) => {
           const link = this.#el<HTMLAnchorElement>(".verify");
           link.href = url.href;
-          link.textContent = "打开 NyxID 授权页";
+          link.textContent = this.#copy.openApproval;
           link.hidden = false;
-          this.#el(".status").textContent = "在 NyxID 核对授权码 " + code;
+          this.#el(".status").textContent = this.#copy.verifyCode(code);
           this.#controls();
         },
       );
@@ -256,13 +282,13 @@ export class NyxAssistantElement extends HTMLElement {
       if (session && session.state.pending) {
         this.dispatchEvent(new Event("nyx-recovery"));
         if (session.state.pending.id) void this.#recover();
-        else this.#el(".status").textContent = "原请求未取得响应编号，请先核对操作结果。";
+        else this.#el(".status").textContent = this.#copy.missingResponse;
       }
       if (!this.#el(".panel").hidden) this.#el("textarea").focus();
     } catch (error) {
       if (!signal.aborted)
         this.#el(".status").textContent =
-          error instanceof Error ? error.message : "无法连接 NyxID。";
+          error instanceof Error ? error.message : this.#copy.connectFailed;
     } finally {
       if (this.#login === login) {
         this.#login = undefined;
@@ -282,7 +308,7 @@ export class NyxAssistantElement extends HTMLElement {
     }
     this.#revoking = true;
     this.#clearView();
-    this.#el(".status").textContent = "正在撤销 NyxID 授权…";
+    this.#el(".status").textContent = this.#copy.revoking;
     let failed = false;
     try {
       await revoke();
@@ -292,7 +318,7 @@ export class NyxAssistantElement extends HTMLElement {
     if (this.#grant?.revoke !== revoke) return;
     this.#revoking = false;
     if (!failed) this.#grant = undefined;
-    this.#el(".status").textContent = failed ? "NyxID 未确认撤销，请重试断开授权。" : "";
+    this.#el(".status").textContent = failed ? this.#copy.revokeFailed : "";
     this.#controls();
     if (!this.#el(".panel").hidden) this.#el(failed ? ".disconnect" : ".connect").focus();
   }
@@ -305,7 +331,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#el(".connect-hint").hidden = this.#el(".connect").hidden;
     disconnect.hidden = !this.#grant && !waitingForApproval;
     disconnect.disabled = this.#revoking;
-    disconnect.textContent = waitingForApproval ? "停止等待授权" : "断开授权";
+    disconnect.textContent = waitingForApproval ? this.#copy.cancelApproval : this.#copy.disconnect;
     this.#el("form").hidden = !this.#host;
     this.#el(".panel").toggleAttribute("data-connected", Boolean(this.#host));
     this.#el(".starters").hidden = !this.#host || this.#busy || pending ||
@@ -331,11 +357,11 @@ export class NyxAssistantElement extends HTMLElement {
     const follow = isUser || chat.scrollHeight - chat.clientHeight - chat.scrollTop <= 4;
     const message = document.createElement(isUser ? "p" : "div");
     message.className = isUser ? "msg user" : "msg markdown";
-    message.setAttribute("aria-label", isUser ? "你" : "Nyx");
+    message.setAttribute("aria-label", isUser ? this.#copy.you : "Nyx");
     if (isUser) message.textContent = text;
     else {
       try {
-        message.append(renderAssistantMarkdown(text));
+        message.append(renderAssistantMarkdown(text, this.#copy.image));
       } catch {
         // A rendering failure must still leave the confirmed source readable.
         message.classList.remove("markdown");
@@ -357,12 +383,12 @@ export class NyxAssistantElement extends HTMLElement {
     try {
       const reply = await lookupNyxReply(this.#connection, pending, { id: pending.id, conversationId: pending.conversationId }, controller.signal);
       if (controller.signal.aborted) return;
-      if (reply.type !== "answer") throw Error("原窗口收到过页面操作。请核对后开始新对话。");
+      if (reply.type !== "answer") throw Error(this.#copy.previousAction);
       session.message(reply.text, false, reply.conversationId);
       this.#bind(this.#connection, this.#grant, session);
       this.dispatchEvent(new CustomEvent("nyx-answer", { detail: reply.text }));
     } catch (error) {
-      if (!controller.signal.aborted) this.#el(".status").textContent = error instanceof Error ? error.message : "无法核对原请求。";
+      if (!controller.signal.aborted) this.#el(".status").textContent = error instanceof Error ? error.message : this.#copy.recoverFailed;
     } finally {
       if (this.#session === session) { this.#busy = false; this.#controls(); }
     }
@@ -383,7 +409,7 @@ export class NyxAssistantElement extends HTMLElement {
       try {
         this.#session?.message(text, true, host.conversationId);
       } catch {
-        this.#el(".status").textContent = "无法保存聊天记录，请检查站点存储。";
+        this.#el(".status").textContent = this.#copy.saveChatFailed;
         return;
       }
       this.#message(text, true);
@@ -392,8 +418,8 @@ export class NyxAssistantElement extends HTMLElement {
     this.#busy = true;
     this.#controls();
     this.#el(".status").textContent = resume
-      ? "正在核对原请求…"
-      : "正在等待回复…";
+      ? this.#copy.recovering
+      : this.#copy.waiting;
     try {
       const answer = await (resume ? host.resume() : host.send(text));
       if (host !== this.#host) return;
@@ -404,7 +430,7 @@ export class NyxAssistantElement extends HTMLElement {
     } catch (error) {
       if (host === this.#host)
         this.#el(".status").textContent =
-          error instanceof Error ? error.message : "请求失败。";
+          error instanceof Error ? error.message : this.#copy.requestFailed;
     } finally {
       if (host === this.#host) {
         this.#busy = false;
