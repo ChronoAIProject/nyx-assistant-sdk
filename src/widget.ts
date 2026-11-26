@@ -24,19 +24,30 @@ class NyxAssistantElement extends HTMLElement {
     this.#root.innerHTML = `<style>${widgetStyle}</style>
       <button class="launch" part="launcher" type="button" aria-expanded="false" aria-controls="panel"><span class="bubble" part="launcher-icon" aria-hidden="true"></span>Nyx 助手</button>
       <section hidden id="panel" class="panel" part="panel" role="dialog" aria-labelledby="title">
-        <header part="header"><h2 id="title">Nyx 助手</h2><button class="disconnect" part="secondary-action" type="button" hidden>断开授权</button>
+        <header part="header"><h2 id="title"><span class="identity" aria-hidden="true"></span>Nyx 助手</h2><button class="disconnect" part="secondary-action" type="button" hidden>断开授权</button>
           <button class="close" part="close" type="button" aria-label="收起助手">×</button></header>
         <div class="chat" role="log" aria-label="聊天记录" aria-live="polite"></div>
+        <div class="starters" hidden><slot name="prompt"></slot></div>
         <div class="controls"><p class="status" role="status"></p>
           <a class="verify" hidden target="_blank" rel="noopener noreferrer"></a>
           <p class="connect-hint">连接 NyxID 后，可以向助手提问或操作当前页面。</p>
           <button class="connect" part="primary-action" type="button">连接 NyxID</button>
-          <form hidden><textarea rows="1" part="input" aria-label="消息" placeholder="给 Nyx 发消息…" required></textarea>
-            <button class="send" part="primary-action" type="submit">发送</button></form>
+          <form part="composer" hidden><textarea rows="1" part="input" aria-label="消息" placeholder="给 Nyx 发消息…" required></textarea>
+            <button class="send" part="primary-action send" type="submit" aria-label="发送"><span class="send-label">发送</span><span class="send-icon" aria-hidden="true">↑</span></button></form>
           <button class="resume" hidden type="button">核对原请求</button>
         </div>
       </section>`;
     this.#el(".launch").onclick = () => this.#open(this.#el(".panel").hidden);
+    const prompts = this.#el<HTMLSlotElement>('slot[name="prompt"]');
+    prompts.onslotchange = () => this.#controls();
+    prompts.addEventListener("click", (event) => {
+      const button = event.composedPath().find(node =>
+        node instanceof HTMLButtonElement && node.assignedSlot === prompts);
+      if (!(button instanceof HTMLButtonElement) || !this.#host || this.#busy) return;
+      const input = this.#el<HTMLTextAreaElement>("textarea");
+      input.value = button.dataset.prompt || button.textContent.trim();
+      input.focus();
+    });
     this.#el(".close").onclick = () => this.#open(false);
     this.#el(".connect").onclick = () => {
       void this.#connect();
@@ -231,6 +242,10 @@ class NyxAssistantElement extends HTMLElement {
     disconnect.disabled = this.#revoking;
     disconnect.textContent = waitingForApproval ? "停止等待授权" : "断开授权";
     this.#el("form").hidden = !this.#host;
+    this.#el(".panel").toggleAttribute("data-connected", Boolean(this.#host));
+    this.#el(".starters").hidden = !this.#host || this.#busy || pending ||
+      this.#el(".chat").childElementCount > 0 ||
+      !this.#el<HTMLSlotElement>('slot[name="prompt"]').assignedElements().length;
     this.#el<HTMLButtonElement>(".send").disabled = this.#busy || pending;
     this.#el(".resume").hidden = this.#busy || !pending;
   }

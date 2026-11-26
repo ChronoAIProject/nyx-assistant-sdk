@@ -88,6 +88,28 @@ button:focus-visible, a:focus-visible {
   inset: auto 0 calc(100% + 6px) auto;
 }
 :host([layout="anchored"][position="left"]) .panel { left: 0; right: auto; }
+.identity, .send-icon { display: none; }
+.starters {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  gap: 6px;
+  padding-inline: 12px;
+  overscroll-behavior-x: contain;
+}
+::slotted(button[slot="prompt"]) {
+  flex: none;
+  max-width: 100%;
+  font: inherit;
+  cursor: pointer;
+  color: var(--_nyx-ink);
+  border: 1px solid var(--_nyx-line);
+  border-radius: var(--_nyx-corner);
+  background: var(--_nyx-control);
+  padding: .35em .65em;
+  margin-top: 8px;
+}
 header {
   flex: none;
   display: flex;
@@ -135,7 +157,7 @@ p { margin: 0 0 .6em; overflow-wrap: anywhere; white-space: pre-wrap; }
   margin-inline-start: auto;
 }
 .controls { flex: none; padding: 8px 10px; }
-.chat:not(:empty) + .controls { border-top: 1px solid var(--_nyx-line); }
+.chat:not(:empty) ~ .controls { border-top: 1px solid var(--_nyx-line); }
 .status { font-size: .9em; color: var(--_nyx-muted); }
 .status:empty { display: none; }
 form {
@@ -174,5 +196,50 @@ textarea::placeholder { color: var(--_nyx-muted); opacity: 1; }
   color: var(--nyx-accent-text, white);
 }
 .resume { margin-top: .5em; }
+/* Console surfaces use the host's mark, typography and live palette. */
+:host([appearance="console"]) .launch {
+  border-radius: 2px;
+  padding-inline: .8em 1em;
+  border-color: color-mix(in srgb, var(--_nyx-accent) 41%, var(--_nyx-paper));
+  background: linear-gradient(108deg, var(--_nyx-control), var(--_nyx-paper));
+  box-shadow: inset 2px 0 var(--_nyx-accent), 0 3px 12px #0003;
+}
+:host([appearance="console"]) .bubble,
+:host([appearance="console"]) .identity {
+  display: inline-block;
+  width: 1.6em;
+  height: 1.6em;
+  border: 0;
+  background: var(--nyx-mark, radial-gradient(circle, var(--_nyx-accent) 25%, transparent 29%)) center / contain no-repeat;
+}
+:host([appearance="console"]) .panel {
+  border-radius: 2px;
+  border-block-start: 2px solid var(--_nyx-accent);
+  background: var(--nyx-panel-surface, var(--_nyx-paper));
+  backdrop-filter: blur(16px);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  width: min(28rem, var(--nyx-panel-max-width, calc(100vw - 32px)));
+  box-shadow: inset 0 1px color-mix(in srgb, var(--_nyx-accent) 18%, transparent);
+}
+:host([appearance="console"]) header {
+  padding: 5px 7px 5px 12px;
+  background: linear-gradient(90deg, var(--_nyx-control), transparent 85%);
+}
+:host([appearance="console"]) h2 { display: flex; align-items: center; gap: .55em; font-size: 1.02em; }
+:host([appearance="console"]) .disconnect { border-color: transparent; font-weight: 500; }
+:host([appearance="console"]) .panel[data-connected] .disconnect::before {
+  content: ""; display: inline-block; width: .48em; height: .48em; margin-inline-end: .48em;
+  border-radius: 50%; background: var(--nyx-connected, var(--_nyx-accent));
+}
+:host([appearance="console"]) .msg { width: auto; max-width: none; padding: .3em 0 .3em .75em; border-inline-start: 2px solid var(--_nyx-accent); }
+:host([appearance="console"]) .user { margin-inline-start: 0; background: transparent; border: 0; border-radius: 0; border-inline-start: 2px solid var(--_nyx-muted); color: var(--_nyx-muted); }
+:host([appearance="console"]) form { border: 0; border-radius: 0; background: transparent; padding: 0; }
+:host([appearance="console"]) textarea { padding-inline-start: .25em; }
+:host([appearance="console"]) form:focus-within { box-shadow: inset 0 -1px var(--_nyx-accent); }
+:host([appearance="console"]) .send { align-self: center; padding: 0; width: 30px; min-height: 30px; border-radius: 50%; }
+:host([appearance="console"]) .send-label { display: none; }
+:host([appearance="console"]) .send-icon { display: inline; font: 600 1.1rem/1 system-ui; }
+:host([appearance="console"]) ::slotted(button[slot="prompt"]) { border: 0; border-inline-start: 2px solid var(--_nyx-line); border-radius: 0; font-size: .89em; }
+:host([appearance="console"]) ::slotted(button[slot="prompt"]:hover) { color: var(--_nyx-accent); border-color: var(--_nyx-accent); }
 a { color: var(--_nyx-accent); display: inline-block; margin: 0 0 .5em; text-decoration: underline; }
 `;
