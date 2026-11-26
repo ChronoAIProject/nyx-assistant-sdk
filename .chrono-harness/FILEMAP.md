@@ -15,7 +15,13 @@
 | `test/nyx-chat.test.ts` | 核心、连接、适配器与模拟 HTTP | Node 验证线上的请求形状及结果关联 | 未知 |
 | `examples/web/index.html` | 筛选与聊天表单 | 网页用户查看行数、发送请求 | 未知 |
 | `examples/web/app.js` | HTML、SDK 与宿主表格状态 | 网页用户读取和修改筛选 | 未知 |
-| `examples/web/serve.mjs` | HTML、页面工具、已打包挂件及测试服务配置 | 本机开发者运行网页示例 | 静态文件读取，推理成本未知 |
+| `examples/web/tickets.js` | 工单样例数据、筛选和只读控件、SDK 注册工具接口 | 本机示例和 SDK 官网共同显示筛选结果并执行权限检查 | 每次变更重画可见行 |
+| `examples/web/serve.mjs` | HTML、页面工具、工单数据、已打包挂件及测试服务配置 | 本机开发者运行网页示例 | 静态文件读取，推理成本未知 |
+| `site/index.html` | 固定 SDK 发行版、文档和演练控件 | SDK 接入者查看官网、演练和接入示例 | 未知 |
+| `site/style.css` | 官网结构、系统字体、视口 | 官网用户在桌面和手机浏览、操作演练 | 一份静态样式 |
+| `site/playground.ts` | SDK 公共入口、共享工单工具、固定演练指令 | 官网用户运行真实的工具读取、修改和拒绝回合 | 一份浏览器包，无模型请求 |
+| `scripts/build-site.mjs` | 官网源文件、SDK 核心与 esbuild | 本机和 Actions 通过 `npm run build:site` 生成 `site/dist` | 一次浏览器打包 |
+| `.github/workflows/pages.yml` | 官网构建输入、`dev` 推送、GitHub Pages 环境 | Pages 读取 `site/dist` 部署官网，相关 PR 构建同一产物 | Actions 和 Pages 部署耗时未知 |
 | `examples/macos/Window.swift` | AppKit、当前窗口选择、独立进程的结果 | macOS 用户执行和核对原生列表修改 | 每个窗口一个 Node 进程 |
 | `examples/macos/bridge.mjs` | 标准输入输出、SDK、已授权服务 | 原生窗口调用 NyxID 并处理结果 | 未知 |
 | `README.md` | 公共导出和上述入口 | 接入方安装、注册工具和复现示例 | 未知 |

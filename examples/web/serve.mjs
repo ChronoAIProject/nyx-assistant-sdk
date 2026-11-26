@@ -7,7 +7,9 @@ import { NyxIDConnection } from "@chronoai/nyx-assistant-sdk";
 let localOrigin;
 const page = await readFile(new URL("./index.html", import.meta.url));
 const app = await readFile(new URL("./app.js", import.meta.url));
+const tickets = await readFile(new URL("./tickets.js", import.meta.url));
 const widget = await readFile(new URL("../../browser/nyx-widget.js", import.meta.url));
+const assets = new Map([["/app.js", app], ["/tickets.js", tickets], ["/nyx-widget.js", widget]]);
 const upstream = process.env.NYXID_BASE_URL && process.env.NYXID_AGENT_KEY
   ? new NyxIDConnection(process.env.NYXID_BASE_URL, (url, init) => {
       const headers = new Headers(init.headers);
@@ -19,9 +21,9 @@ const server = createServer(async (req, res) => {
   const end = (status, body = "") => { res.statusCode = status; res.end(body); };
   try {
     if (req.headers.host !== new URL(localOrigin).host) return end(403);
-    if (req.method === "GET" && ["/", "/app.js", "/nyx-widget.js"].includes(req.url)) {
+    if (req.method === "GET" && (req.url === "/" || assets.has(req.url))) {
       res.setHeader("Content-Type", req.url === "/" ? "text/html; charset=utf-8" : "text/javascript");
-      return end(200, req.url === "/" ? page : req.url === "/app.js" ? app : widget);
+      return end(200, req.url === "/" ? page : assets.get(req.url));
     }
     const match = /^\/api\/v1\/proxy\/s\/llm-nyx\/v1\/responses(?:\/([A-Za-z0-9_-]+))?$/.exec(req.url);
     if (!match || req.method !== (match[1] ? "GET" : "POST")) return end(404);
