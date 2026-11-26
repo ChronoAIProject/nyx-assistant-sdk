@@ -17,7 +17,7 @@ test("changing widget language preserves its inputs and localizes a pending auth
   input.value = "keep my draft";
   assert.equal(view.querySelector(".connect")!.textContent, "连接 NyxID");
   widget.lang = "en-US";
-  assert.equal(view.querySelector(".connect")!.textContent, "Connect NyxID");
+  assert.equal(view.querySelector(".connect")!.textContent, "Connect to NyxID");
   assert.equal(input.getAttribute("aria-label"), "Message");
   const original = globalThis.fetch;
   try {

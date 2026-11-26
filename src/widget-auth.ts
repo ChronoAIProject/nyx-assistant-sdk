@@ -1,4 +1,4 @@
-import { LocalizedError } from "./widget-i18n.ts";
+import { LocalizedError, type MessageKey } from "./widget-i18n.ts";
 import { NyxIDConnection } from "./connection.ts";
 import { isSealed, openCredential, sealCredential } from "./credential-storage.ts";
 import { z } from "zod";
@@ -30,6 +30,7 @@ export interface PreviousGrant {
   forget(): void;
 }
 export interface BrowserAuthorizationOptions {
+  language?: "zh" | "en";
   previousGrant?: () => PreviousGrant | undefined;
   base: string | URL;
   verificationOrigin: string;
@@ -77,6 +78,10 @@ export class BrowserAuthorization {
   readonly #storageKey: string;
   #active?: AbortController;
 
+  #error(key: MessageKey, value = "") {
+    return new LocalizedError(key, value, this.#options.language);
+  }
+
   constructor(options: BrowserAuthorizationOptions) {
     this.#base = new URL(options.base);
     new NyxIDConnection(this.#base);
@@ -120,7 +125,7 @@ export class BrowserAuthorization {
     signal?.throwIfAborted();
     if (!this.#options.credentialStorage) return run();
     const locks = globalThis.navigator?.locks;
-    if (!locks) throw new LocalizedError("locks");
+    if (!locks) throw this.#error("locksRequired");
     return locks.request(this.credentialStorageKey, { signal }, run);
   }
 
@@ -175,7 +180,7 @@ export class BrowserAuthorization {
       this.#forget(record);
       return undefined;
     }
-    if (!response.ok) throw new LocalizedError("restoreHttp", String(response.status));
+    if (!response.ok) throw this.#error("restoreFailed", String(response.status));
     const identity = await response.json();
     signal.throwIfAborted();
     if (store.getItem(this.credentialStorageKey) !== record) return undefined;
@@ -201,7 +206,7 @@ export class BrowserAuthorization {
   }
 
   async connect(signal: AbortSignal, showLink: (url: URL, code: string) => void) {
-    if (this.#active) throw new LocalizedError("alreadyPending");
+    if (this.#active) throw this.#error("approvalActive");
     const controller = new AbortController();
     const active = AbortSignal.any([signal, controller.signal]);
     this.#active = controller;
@@ -224,14 +229,14 @@ export class BrowserAuthorization {
         requested_profile: "nyx-widget", client_label: this.#options.clientLabel,
         client_app: "nyx-assistant-sdk", client_form_factor: "browser",
       }, active);
-      if (!reply.ok) throw new LocalizedError("authHttp", String(reply.status));
+      if (!reply.ok) throw this.#error("approvalFailed", String(reply.status));
       const value = challenge.parse(await reply.json());
       pending = { ...value, expiresAt: Date.now() + value.expires_in * 1000, nextPollAt: Date.now() + value.interval * 1000 };
     }
     const url = new URL(pending.verification_uri);
     if (url.origin !== this.#origin || url.pathname !== "/login/agent-key" || url.username || url.password || url.hash) {
       this.cancel();
-      throw new LocalizedError("wrongOrigin");
+      throw this.#error("invalidApprovalUrl");
     }
     url.search = new URLSearchParams({
       user_code: pending.user_code, login_type: "agent", key_source: this.#options.keySource ?? "existing",
@@ -254,7 +259,7 @@ export class BrowserAuthorization {
       if (delivery.error === "agent_key_login_slow_down") interval += 5000;
       else if (delivery.error !== "agent_key_login_pending") {
         store?.removeItem(this.#storageKey);
-        throw new LocalizedError("authExpired");
+        throw this.#error("approvalEnded");
       }
       pending.nextPollAt = Math.min(Date.now() + interval, pending.expiresAt);
       store?.setItem(this.#storageKey, JSON.stringify(pending));
@@ -268,7 +273,7 @@ export class BrowserAuthorization {
         method: "DELETE", redirect: "error", credentials: "omit", keepalive: true,
         headers: { Authorization: "Bearer " + credential },
       });
-      if (!response.ok && response.status !== 401) throw new LocalizedError("revokeFailed");
+      if (!response.ok && response.status !== 401) throw this.#error("revokeFailed");
       if (record) this.#forget(record);
     };
     const parsed = z.object({ credential_id: z.string().min(1), api_key: keySummary }).safeParse(delivery);
@@ -283,7 +288,7 @@ export class BrowserAuthorization {
         services.size !== this.#services.length || this.#services.some(s => !services.has(s)) ||
         ids.size !== new Set(key.allowed_service_ids).size || key.allowed_service_ids.some(id => !ids.has(id))) {
       await revokeChild();
-      throw new LocalizedError("scopeMismatch");
+      throw this.#error("invalidGrant");
     }
     if (!record && this.#options.credentialStorage) {
       try {
@@ -291,7 +296,7 @@ export class BrowserAuthorization {
         signal.throwIfAborted();
         this.#options.credentialStorage.setItem(this.credentialStorageKey, record);
       }
-      catch { await revokeChild(); throw new LocalizedError("saveGrant"); }
+      catch { await revokeChild(); throw this.#error("saveGrantFailed"); }
     }
     const connection = new NyxIDConnection(this.#base, (input, init) => {
       const headers = new Headers(init?.headers);

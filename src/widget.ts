@@ -61,7 +61,7 @@ export class NyxAssistantElement extends HTMLElement {
       el.setAttribute("aria-label", this.#text(el.dataset.aria as MessageKey));
     }
     this.#el<HTMLTextAreaElement>("textarea").placeholder = this.#text("placeholder");
-    this.#el(".disconnect").textContent = this.#text(this.#login?.restoreOnly === false ? "stopApproval" : "disconnect");
+    this.#el(".disconnect").textContent = this.#text(this.#login?.restoreOnly === false ? "cancelApproval" : "disconnect");
     if (this.access) this.#el(".access p").textContent = this.access.services.join(this.#text("separator"));
     this.#renderStatus();
   }
@@ -71,17 +71,17 @@ export class NyxAssistantElement extends HTMLElement {
     super();
     // Only the static widget shell is assigned here.
     this.#root.innerHTML = `<style>${widgetStyle}</style>
-      <button class="launch" part="launcher" type="button" aria-expanded="false" aria-controls="panel"><span class="bubble" part="launcher-icon" aria-hidden="true"></span><span data-label="title"></span></button>
+      <button class="launch" part="launcher" type="button" aria-expanded="false" aria-controls="panel"><span class="bubble" part="launcher-icon" aria-hidden="true"></span><span class="launch-label" data-label="title"></span></button>
       <section hidden id="panel" class="panel" part="panel" role="dialog" aria-labelledby="title">
-        <header part="header"><h2 id="title"><span class="identity" aria-hidden="true"></span><span data-label="title"></span></h2><button class="disconnect" part="secondary-action" type="button" hidden></button>
+        <header part="header"><h2 id="title"><span class="identity" aria-hidden="true"></span><span class="title-label" data-label="title"></span></h2><button class="disconnect" part="secondary-action" type="button" hidden></button>
           <button class="close" part="close" type="button" data-aria="close">×</button></header>
         <details class="access" hidden><summary data-label="services"></summary>
-          <p></p><a target="_blank" rel="noopener noreferrer" data-label="manageAccess"></a></details>
-        <div class="chat" role="log" data-aria="history" aria-live="polite"></div>
+          <p></p><a target="_blank" rel="noopener noreferrer" data-label="manage"></a></details>
+        <div class="chat" role="log" data-aria="chat" aria-live="polite"></div>
         <div class="starters" hidden><slot name="prompt"></slot></div>
         <div class="controls"><p class="status" role="status"></p>
-          <a class="verify" data-label="verifyLink" hidden target="_blank" rel="noopener noreferrer"></a>
-          <p class="connect-hint" data-label="connectHint"></p>
+          <a class="verify" data-label="openApproval" hidden target="_blank" rel="noopener noreferrer"></a>
+          <p class="connect-hint" data-label="hint"></p>
           <button class="connect" part="primary-action" type="button" data-label="connect"></button>
           <form part="composer" hidden><textarea rows="1" part="input" data-aria="message" required></textarea>
             <button class="send" part="primary-action send" type="submit" data-aria="send"><span class="send-label" data-label="send"></span><span class="send-icon" aria-hidden="true">↑</span></button></form>
@@ -118,7 +118,7 @@ export class NyxAssistantElement extends HTMLElement {
     };
     this.#el(".reset").onclick = () => {
       if (!this.#session || !this.#connection || this.#busy ||
-          !window.confirm(this.#text("resetConfirm"))) return;
+          !window.confirm(this.#text("confirmReset"))) return;
       const session = this.#session;
       session.save({ messages: [] });
       this.#bind(this.#connection, this.#grant, session);
@@ -179,7 +179,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#clearView();
     return (this.#authorization?.persistent ? undefined : revoke?.())?.catch(() => {
       if (!this.#host)
-        this.#showStatus("revocationStatus");
+        this.#showStatus("verifyRevoke");
     });
   }
   #clearView() {
@@ -243,6 +243,7 @@ export class NyxAssistantElement extends HTMLElement {
     try { storage = sessionStorage; } catch { /* Storage is optional for this visit. */ }
     const services = (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
     return new BrowserAuthorization({
+      language: this.lang.toLowerCase().startsWith("en") ? "en" : "zh",
       base, verificationOrigin: this.dataset.verificationOrigin || base.origin, services, storage, credentialStorage,
       previousGrant: this.previousGrant, ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined, catalogServices: this.dataset.catalogServices?.split(","), clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
     });
@@ -292,7 +293,7 @@ export class NyxAssistantElement extends HTMLElement {
       if (session && session.state.pending) {
         this.dispatchEvent(new Event("nyx-recovery"));
         if (session.state.pending.id) void this.#recover();
-        else this.#showStatus("noResponseId");
+        else this.#showStatus("missingResponse");
       }
       if (!this.#el(".panel").hidden) this.#el("textarea").focus();
     } catch (error) {
@@ -340,7 +341,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#el(".connect-hint").hidden = this.#el(".connect").hidden;
     disconnect.hidden = !this.#grant && !waitingForApproval;
     disconnect.disabled = this.#revoking;
-    disconnect.textContent = this.#text(waitingForApproval ? "stopApproval" : "disconnect");
+    disconnect.textContent = this.#text(waitingForApproval ? "cancelApproval" : "disconnect");
     this.#el("form").hidden = !this.#host;
     this.#el(".panel").toggleAttribute("data-connected", Boolean(this.#host));
     this.#el(".starters").hidden = !this.#host || this.#busy || pending ||
@@ -419,7 +420,7 @@ export class NyxAssistantElement extends HTMLElement {
       try {
         this.#session?.message(text, true, host.conversationId);
       } catch {
-        this.#showStatus("storageFailed");
+        this.#showStatus("saveChatFailed");
         return;
       }
       this.#message(text, true);
@@ -427,7 +428,7 @@ export class NyxAssistantElement extends HTMLElement {
     }
     this.#busy = true;
     this.#controls();
-    this.#showStatus(resume ? "checking" : "waiting");
+    this.#showStatus(resume ? "recovering" : "waiting");
     try {
       const answer = await (resume ? host.resume() : host.send(text));
       if (host !== this.#host) return;
