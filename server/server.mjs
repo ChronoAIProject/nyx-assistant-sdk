@@ -1,3 +1,4 @@
+import { addAbortListener } from "node:events";
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -43,12 +44,15 @@ function untilWritable(res) {
   });
 }
 
-async function send(res, upstream, completeTurn = false) {
+async function send(res, upstream, signal, completeTurn = false) {
+  signal.throwIfAborted();
   for (const name of ["content-type", "retry-after"]) {
     const value = upstream.headers.get(name);
     if (value) res.setHeader(name, value);
   }
   if (!res.destroyed) {
+    const abort = addAbortListener(signal, () => res.destroy());
+    res.once("close", () => abort[Symbol.dispose]());
     res.writeHead(upstream.status);
     res.flushHeaders();
   }
@@ -56,6 +60,7 @@ async function send(res, upstream, completeTurn = false) {
     // Like Metaverse, allow NyxAgent to store the result after the browser disconnects.
     for await (const chunk of upstream.body) {
       if (!res.destroyed && !res.write(chunk)) await untilWritable(res);
+      signal.throwIfAborted();
     }
     if (!res.destroyed) res.end();
     return;
@@ -116,11 +121,11 @@ export function sdkServer({ upstreamOrigin, origins, request = fetch }) {
       }
       if (path.startsWith(responses)) {
         const self = await request(upstream + auth + "self", { ...options, headers: { Authorization: bearer } });
-        if (!self.ok) return await send(res, self);
+        if (!self.ok) return await send(res, self, options.signal);
         await self.body?.cancel();
       }
       const result = await request(upstream + path, { ...options, method: req.method, headers, body });
-      await send(res, result, completeTurn);
+      await send(res, result, options.signal, completeTurn);
     } catch {
       if (!res.headersSent && !res.destroyed) fail(res, 502, "nyxid_unavailable");
       else res.destroy();

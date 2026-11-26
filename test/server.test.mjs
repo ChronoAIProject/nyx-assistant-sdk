@@ -39,3 +39,66 @@ test("static server forwards scoped child requests, streams Responses, and isola
   assert.equal((await fetch(base + "auth/agent-key/approve", post)).status, 404);
   assert.equal((await fetch(path + "/original", { headers: { origin, authorization: "Bearer child" } })).status, 200);
 });
+
+for (const event of ["deadline", "browser disconnect"]) {
+  test(`Responses handles ${event} while waiting for downstream drain`, { timeout: 3_000 }, async t => {
+    const deadline = new AbortController();
+    t.mock.method(AbortSignal, "timeout", milliseconds => {
+      assert.equal(milliseconds, 300_000);
+      return deadline.signal;
+    });
+    const stalled = Promise.withResolvers();
+    const turn = Promise.withResolvers();
+    let upstreamSignal;
+    const server = sdkServer({ upstreamOrigin: "https://id.example", origins: [],
+      request: async (url, options) => {
+        if (url.endsWith("/self")) return new Response();
+        if (options.method === "GET") return Response.json(await turn.promise);
+        upstreamSignal = options.signal;
+        let started = false;
+        return new Response(new ReadableStream({
+          pull(controller) {
+            if (!started) {
+              started = true;
+              controller.enqueue(new TextEncoder().encode("data: reply\n\n"));
+              return;
+            }
+            controller.close();
+            turn.resolve("reply");
+          },
+          cancel() { turn.resolve(null); },
+        }, { highWaterMark: 0 }));
+      },
+    });
+    server.prependOnceListener("request", (_req, res) => {
+      t.mock.method(res, "write", () => {
+        stalled.resolve();
+        return false;
+      });
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    t.after(() => new Promise(resolve => {
+      server.close(resolve);
+      server.closeAllConnections();
+    }));
+    const path = `http://127.0.0.1:${server.address().port}/api/v1/proxy/s/llm-nyx/v1/responses`;
+    const authorization = "Bearer child";
+    const response = await fetch(path, {
+      method: "POST", headers: { authorization, "content-type": "application/json" }, body: "{}",
+    });
+    assert.equal(response.status, 200);
+    await stalled.promise;
+    if (event === "deadline") {
+      deadline.abort();
+      await assert.rejects(response.text());
+      assert.equal(await turn.promise, null);
+    } else {
+      await response.body.cancel();
+      assert.equal(await turn.promise, "reply");
+      assert.equal(upstreamSignal.aborted, false);
+      const recovered = await fetch(path + "/original", { headers: { authorization } });
+      assert.equal(await recovered.json(), "reply");
+    }
+  });
+}
