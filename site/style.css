@@ -128,7 +128,7 @@ nav a:hover, .text-link:hover { color: #fff; }
 .demo-title-group { display: flex; align-items: center; gap: .63rem; }
 .demo-icon { display: grid; width: 2rem; aspect-ratio: 1; place-items: center; color: #d1bfff; background: #382d52; border-radius: .5rem; font-size: 1rem; }
 .demo-top h2 { margin: 0; font-size: .99rem; }
-.demo-top p { margin: .16rem 0 0; color: var(--muted); font-size: .69rem; white-space: nowrap; }
+.demo-top p { margin: .16rem 0 0; color: var(--muted); font-size: .69rem; }
 .toggle { display: flex; align-items: center; gap: .44rem; font-size: .73rem; color: #d1cbe3; white-space: nowrap; }
 .toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .switch { position: relative; display: block; width: 1.87rem; height: 1.04rem; border-radius: 1rem; background: #504962; }
@@ -185,8 +185,19 @@ pre { margin: 0; padding: .73rem; color: #d8cdfa; white-space: pre-wrap; overflo
 .card-links { display: flex; flex-wrap: wrap; gap: .85rem 1.15rem; }
 .flow-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin: 1.4rem 0 0; }
 .flow dt { margin-bottom: .4rem; color: #dfd3ff; font-weight: 680; }
-.site-footer { border-top: 1px solid var(--line); }
+.site-footer { border-top: 1px solid var(--line); padding-bottom: 3.5rem; }
 .footer-inner { min-height: 5rem; }
+
+nyx-assistant {
+  color-scheme: dark;
+  --nyx-accent: var(--purple);
+  --nyx-accent-text: #171121;
+  --nyx-surface: var(--surface);
+  --nyx-text: #f5f3ff;
+  --nyx-control-surface: #242033;
+  --nyx-muted: var(--muted);
+  --nyx-radius: 16px;
+}
 
 @media (max-width: 880px) {
   .shell { width: calc(100% - 3rem); }

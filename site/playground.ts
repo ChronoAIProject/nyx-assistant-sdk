@@ -9,6 +9,10 @@ const prompts = {
 
 const labels = { all: "全部", open: "待处理", closed: "已关闭" } as const;
 const tickets = mountTickets();
+document.querySelector("nyx-assistant")!.addEventListener("nyx-ready", (event) => {
+  const { host, z: widgetZ } = (event as CustomEvent<{ host: AssistantHost; z: typeof z }>).detail;
+  tickets.registerTools(host, widgetZ);
+});
 const result = document.querySelector<HTMLElement>("#tool-result")!;
 const resultState = document.querySelector<HTMLElement>("#result-state")!;
 const summary = document.querySelector<HTMLElement>("#result-summary")!;
