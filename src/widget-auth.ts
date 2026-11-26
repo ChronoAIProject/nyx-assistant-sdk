@@ -23,7 +23,13 @@ const keySummary = z.object({
   })).min(1),
 });
 
+export interface PreviousGrant {
+  credential: string;
+  /** Remove this exact old record after encrypted storage and live verification. */
+  forget(): void;
+}
 export interface BrowserAuthorizationOptions {
+  previousGrant?: () => PreviousGrant | undefined;
   base: string | URL;
   verificationOrigin: string;
   services: readonly string[];
@@ -104,8 +110,24 @@ export class BrowserAuthorization {
   }
 
   async restore(signal: AbortSignal) {
-    if (!this.hasSavedGrant) return undefined;
-    return this.#withGrantLock(signal, () => this.#restore(signal));
+    if (!this.hasSavedGrant && !this.#options.previousGrant) return undefined;
+    return this.#withGrantLock(signal, async () => {
+      const store = this.#options.credentialStorage;
+      const previous = this.#options.previousGrant?.();
+      if (!store || !previous) return this.#restore(signal);
+      const record = store.getItem(this.credentialStorageKey);
+      if (record && await openCredential(this.credentialStorageKey, record) !== previous.credential)
+        return this.#restore(signal);
+      if (!record) {
+        const sealed = await sealCredential(this.credentialStorageKey, previous.credential);
+        signal.throwIfAborted();
+        store.setItem(this.credentialStorageKey, sealed);
+      }
+      const grant = await this.#restore(signal);
+      signal.throwIfAborted();
+      previous.forget();
+      return grant;
+    });
   }
 
   async #restore(signal: AbortSignal) {

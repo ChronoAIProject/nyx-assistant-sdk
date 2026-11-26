@@ -1,7 +1,7 @@
 import { AssistantHost, type Json, NyxIDConnection, z } from "./index.ts";
 import { WidgetSession } from "./widget-session.ts";
 import { createNyxChatService, lookupNyxReply } from "./nyx-chat.ts";
-import { BrowserAuthorization } from "./widget-auth.ts";
+import { BrowserAuthorization, type PreviousGrant } from "./widget-auth.ts";
 import { widgetStyle } from "./widget-style.ts";
 import { renderAssistantMarkdown } from "./markdown.ts";
 
@@ -18,6 +18,7 @@ export class NyxAssistantElement extends HTMLElement {
   #recovery?: AbortController;
   context: () => Json = () => ({ title: document.title, language: document.documentElement.lang });
   instructions?: string;
+  previousGrant?: () => PreviousGrant | undefined;
   get busy() { return this.#busy; }
   get host() {
     return this.#host;
@@ -191,7 +192,7 @@ export class NyxAssistantElement extends HTMLElement {
     const services = (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
     return new BrowserAuthorization({
       base, verificationOrigin: this.dataset.verificationOrigin || base.origin, services, storage, credentialStorage,
-      ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined, catalogServices: this.dataset.catalogServices?.split(","), clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
+      previousGrant: this.previousGrant, ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined, catalogServices: this.dataset.catalogServices?.split(","), clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
     });
   }
   async #connect(restoreOnly = false) {
@@ -331,6 +332,7 @@ export class NyxAssistantElement extends HTMLElement {
       if (reply.type !== "answer") throw Error("原窗口收到过页面操作。请核对后开始新对话。");
       session.message(reply.text, false, reply.conversationId);
       this.#bind(this.#connection, this.#revoke, session);
+      this.dispatchEvent(new CustomEvent("nyx-answer", { detail: reply.text }));
     } catch (error) {
       if (!controller.signal.aborted) this.#el(".status").textContent = error instanceof Error ? error.message : "无法核对原请求。";
     } finally {
