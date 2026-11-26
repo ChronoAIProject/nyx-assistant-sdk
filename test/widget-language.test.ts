@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 
-const dom = new JSDOM("", { url: "https://example.test" });
+const dom = new JSDOM('<html lang="zh-CN"></html>', { url: "https://example.test" });
 Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement,
   Event: dom.window.Event, CustomEvent: dom.window.CustomEvent, location: dom.window.location });
 const { NyxAssistantElement } = await import("../src/widget.ts");
@@ -39,5 +39,51 @@ test("changing widget language preserves its inputs and localizes a pending auth
   } finally {
     globalThis.fetch = original;
     widget.remove();
+  }
+});
+
+test("a widget inherits page language and keeps the connected host when language changes", async () => {
+  document.documentElement.lang = "en-GB";
+  const widget = new NyxAssistantElement();
+  widget.dataset.proxy = "/";
+  document.body.append(widget);
+  try {
+    const view = widget.shadowRoot!;
+    const input = view.querySelector("textarea")!;
+    const host = widget.host;
+    input.value = "draft";
+    assert.equal(input.placeholder, "Message Nyx…");
+    document.documentElement.lang = "zh-Hans";
+    await Promise.resolve();
+    assert.equal(input.placeholder, "给 Nyx 发消息…");
+    widget.lang = "en-AU";
+    assert.equal(input.placeholder, "Message Nyx…");
+    assert.equal(input.value, "draft");
+    assert.equal(widget.host, host);
+    widget.removeAttribute("lang");
+    assert.equal(input.placeholder, "给 Nyx 发消息…");
+  } finally {
+    widget.remove();
+    document.documentElement.lang = "zh-CN";
+  }
+});
+
+test("browser language preferences are tried in order with Chinese as the final fallback", () => {
+  document.documentElement.removeAttribute("lang");
+  const navigator = dom.window.navigator;
+  const widget = new NyxAssistantElement();
+  widget.dataset.proxy = "/";
+  try {
+    Object.defineProperty(navigator, "languages", { configurable: true, value: ["fr-FR", "en-CA"] });
+    document.body.append(widget);
+    const title = widget.shadowRoot!.querySelector(".title-label")!;
+    assert.equal(title.textContent, "Nyx Assistant");
+    Object.defineProperty(navigator, "languages", { configurable: true, value: ["invalid tag", "fr-FR"] });
+    window.dispatchEvent(new dom.window.Event("languagechange"));
+    assert.equal(title.textContent, "Nyx 助手");
+  } finally {
+    widget.remove();
+    Reflect.deleteProperty(navigator, "languages");
+    document.documentElement.lang = "zh-CN";
   }
 });

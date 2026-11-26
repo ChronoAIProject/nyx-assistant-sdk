@@ -6,8 +6,7 @@
   <meta name="theme-color" content="#101018">
   <meta name="description" content="{{description}}">
   <title>{{title}}</title>
-  <link rel="alternate" hreflang="zh-CN" href="../zh/">
-  <link rel="alternate" hreflang="en" href="../en/">
+  {{alternateLinks}}
   <link rel="stylesheet" href="../style.css">
   <script defer src="../playground.js"></script>
   <script defer src="../nyx-widget.js"></script>
@@ -20,7 +19,7 @@
       <nav aria-label="{{siteNav}}">
         <a href="#playground">{{tryOnline}}</a>
         <a href="#quickstart">{{quickstart}}</a>
-        <a href="../{{alternate}}/" lang="{{alternateLang}}" hreflang="{{alternateLang}}">{{alternateName}}</a>
+        {{languageLinks}}
         <a class="source-link" href="https://github.com/ChronoAIProject/nyx-assistant-sdk">GitHub <span aria-hidden="true">↗</span></a>
       </nav>
     </div>
@@ -117,7 +116,7 @@
           <h3>{{ownInterface}}</h3>
           <p>{{hostInstructions}}</p>
           <div class="code-card">
-            <div class="code-top"><span>TERMINAL</span><button type="button" data-copy="install-sdk" aria-label="{{copyInstall}}" hidden>{{copy}}</button></div>
+            <div class="code-top"><span>{{terminal}}</span><button type="button" data-copy="install-sdk" aria-label="{{copyInstall}}" hidden>{{copy}}</button></div>
             <pre><code id="install-sdk">npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0-alpha.13/chronoai-nyx-assistant-sdk-0.1.0-alpha.13.tgz</code></pre>
           </div>
           <div class="card-links">

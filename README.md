@@ -22,7 +22,7 @@ SDK 官网的「免登录试用」可直接读取或切换演示工单的筛选�
 
 有网站登录的宿主可通过 `data-owner-id` 核验当前个人账号，`data-catalog-services` 指定须与 NyxID 目录身份匹配的服务。按账号或工作区切换时重新创建元素。设置 `data-session` 为当前工作区编号后，已验证的同一浏览器子凭据可在当前标签页恢复最近 30 条聊天记录。发生刷新时，已取得响应编号的请求从原响应读取；旧窗口未确认的页面操作提示用户核对。宿主可监听 `nyx-recovery` 打开已有聊天面板。
 
-在主视图中放置 `<nyx-assistant>` 元素，可指定挂件位置。将连接配置写在该元素上，用页面 CSS 设置其定位。可设置 `lang="en"` 或 `lang="zh-CN"`。运行时切换会更新控件、无障碍标签和当前状态，并保留聊天与输入草稿。默认使用简体中文。
+在主视图中放置 `<nyx-assistant>` 元素，可指定挂件位置。将连接配置写在该元素上，用页面 CSS 设置其定位。挂件依次匹配元素的 `lang`、页面 `<html lang>` 和浏览器首选语言。支持 `zh-CN`、`en-GB` 等地区标签，找不到匹配时使用简体中文。自动挂载时也可在 `<script>` 上指定 `lang`。运行时修改元素或页面的 `lang` 会更新控件、无障碍标签和当前状态，并保留会话与输入草稿。
 
 控制台页面可选 `appearance="console"`，通过 `--nyx-mark: url(...)` 引用自己的标识，通过 `--nyx-panel-surface` 指定面板背景。若宿主提供 `<button type="button" slot="prompt">读取当前视图</button>`，已连接且对话为空时可点击填入输入框，再编辑和发送。
 
@@ -108,6 +108,8 @@ remove();       // 该工具随宿主功能卸载。
 host.dispose(); // 关闭窗口、注销或切换身份时销毁该实例。
 ```
 
+自建界面可以设置 `host.language`（如 `"zh-CN"`）来选择 SDK 宿主生成的诊断和工具错误文案。`BrowserAuthorization` 接受 `language` 选项。SDK 导出的 `LocalizedError` 可通过 `error.localize(language)` 按当前界面语言显示，同时保留 HTTP 状态码等参数。
+
 每个窗口和登录身份创建一个独立实例。处理函数应在执行时读取当前业务状态，检查权限，异步写入前检查传入的 AbortSignal。已拒绝的业务操作返回 `{ok:false, code, message}`，只有确认成功后才返回 `{ok:true, value}`。上下文会进入模型输入，应只包含当前请求需要的数据。
 
 ## 服务与工具契约
@@ -126,6 +128,10 @@ host.dispose(); // 关闭窗口、注销或切换身份时销毁该实例。
 |---|---|---|
 | 独立网页 | `npm run example:web` | 打开终端显示的网址，要求助手读取筛选再切换为待处理，检查实际行数。勾选只读模式可验证宿主拒绝。 |
 | macOS AppKit | `npm run example:macos` | 两个窗口各运行一个 SDK 实例。选择列表项，要求助手读取并标记，检查原生复选框和另一个窗口的状态。需要 Swift 和 Node.js。 |
+
+网页示例可通过页面上的语言链接或直接访问 `/zh/`、`/en/` 来选择语言。原生示例启动时读取 macOS 首选语言，并将选中的语言传给窗口的 Node 子进程。
+
+扩展语言时，在使用该语言的入口补齐对应目录。SDK 与挂件使用 [messages.ts](src/messages.ts)，官网与网页示例共用 [locales.mjs](site/locales.mjs)，原生窗口与桥接器共用 [locales.json](examples/macos/locales.json)。静态页面路径和语言导航根据网站目录自动生成。
 
 原生示例由 AppKit 执行读写，Node 子进程通过每个窗口独立的标准输入输出管道运行相同的 SDK 与 Nyx 聊天适配器。窗口关闭后子进程结束。[网页示例](examples/web/app.js) · [原生窗口](examples/macos/Window.swift)
 

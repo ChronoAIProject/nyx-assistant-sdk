@@ -1,3 +1,4 @@
+import { resolveLocale, translate } from "./i18n.ts";
 import DOMPurify from "dompurify";
 import { Marked } from "marked";
 import markedCjkFriendly from "marked-cjk-friendly";
@@ -26,7 +27,10 @@ function destination(href: string | null): URL | undefined {
 }
 
 /** Render a confirmed assistant reply in the current browser document. */
-export function renderAssistantMarkdown(source: string, imageLabel = "图片"): DocumentFragment {
+export function renderAssistantMarkdown(
+  source: string,
+  imageLabel = translate(resolveLocale(document.documentElement.lang, ...window.navigator.languages), "image"),
+): DocumentFragment {
   const fragment = DOMPurify.sanitize(markdown.parse(source, { async: false }), {
     RETURN_DOM_FRAGMENT: true, ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false,
     ALLOWED_TAGS: ["p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "em", "strong", "del", "blockquote",
@@ -35,13 +39,19 @@ export function renderAssistantMarkdown(source: string, imageLabel = "图片"): 
   });
   for (const placeholder of fragment.querySelectorAll<HTMLElement>("[data-nyx-image]")) {
     const url = destination(placeholder.dataset.nyxImage ?? null);
-    const alt = placeholder.textContent || imageLabel;
+    let alt: Node = document.createTextNode(placeholder.textContent);
+    if (!alt.textContent) {
+      const label = document.createElement("span");
+      label.dataset.label = "image";
+      label.textContent = imageLabel;
+      alt = label;
+    }
     if (url?.protocol !== "https:" || placeholder.closest("a")) {
       placeholder.replaceWith(alt);
     } else {
       const link = document.createElement("a");
       link.href = url.href;
-      link.textContent = alt;
+      link.append(alt);
       placeholder.replaceWith(link);
     }
   }

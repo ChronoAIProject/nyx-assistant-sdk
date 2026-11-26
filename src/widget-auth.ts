@@ -1,4 +1,4 @@
-import { LocalizedError, type MessageKey } from "./widget-i18n.ts";
+import { defaultLocale, LocalizedError, type MessageKey } from "./i18n.ts";
 import { NyxIDConnection } from "./connection.ts";
 import { isSealed, openCredential, sealCredential } from "./credential-storage.ts";
 import { z } from "zod";
@@ -30,7 +30,7 @@ export interface PreviousGrant {
   forget(): void;
 }
 export interface BrowserAuthorizationOptions {
-  language?: "zh" | "en";
+  language?: string;
   previousGrant?: () => PreviousGrant | undefined;
   base: string | URL;
   verificationOrigin: string;
@@ -79,7 +79,7 @@ export class BrowserAuthorization {
   #active?: AbortController;
 
   #error(key: MessageKey, value = "") {
-    return new LocalizedError(key, value, this.#options.language);
+    return new LocalizedError(key, value, this.#options.language ?? defaultLocale);
   }
 
   constructor(options: BrowserAuthorizationOptions) {

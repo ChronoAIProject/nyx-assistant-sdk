@@ -1,0 +1,37 @@
+{
+  "defaultLocale": "zh",
+  "locales": {
+    "zh": {
+      "windowTitle": "NyxID · 清单 %d",
+      "items": { "Alpha": "阿尔法", "Beta": "贝塔", "Gamma": "伽马" },
+      "mark": "已标记",
+      "readOnly": "只读模式",
+      "prompt": "读取当前选择，然后标记这一项并告诉我实际结果。",
+      "send": "发送",
+      "resume": "核对原请求",
+      "closed": "连接已关闭，请核对最后一次操作。",
+      "denied": "此窗口为只读模式。",
+      "unavailable": "当前选区或工具已改变。",
+      "startFailed": "无法启动 NyxID 示例：%@",
+      "configure": "请为原生示例配置 NYXID_BASE_URL 和 NYXID_AGENT_KEY。",
+      "readTool": "读取此窗口选中行的 ID 及其标记状态。",
+      "markTool": "根据 ID 设置此窗口选中行的标记。"
+    },
+    "en": {
+      "windowTitle": "NyxID · List %d",
+      "items": { "Alpha": "Alpha", "Beta": "Beta", "Gamma": "Gamma" },
+      "mark": "Marked",
+      "readOnly": "Read-only mode",
+      "prompt": "Read the current selection, mark that item, and tell me the result.",
+      "send": "Send",
+      "resume": "Check original request",
+      "closed": "The connection closed. Check the result of your last action.",
+      "denied": "This window is in read-only mode.",
+      "unavailable": "The selection or tool has changed.",
+      "startFailed": "Unable to start the NyxID example: %@",
+      "configure": "Set NYXID_BASE_URL and NYXID_AGENT_KEY for the native example.",
+      "readTool": "Read the selected row ID and its marked state from this window.",
+      "markTool": "Set the mark of the selected row, identified by ID, in this window."
+    }
+  }
+}

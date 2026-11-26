@@ -1,12 +1,10 @@
-import { chineseTickets } from "../examples/web/tickets.js";
-
+export const defaultLocale = "zh";
 export const relay = "https://nyx-assistant-sdk-chronoai.apps.nyxid.ai";
 
 export const locales = {
   zh: {
     lang: "zh-CN",
     name: "简体中文",
-    alternate: "en",
     page: {
       title: "NyxID Assistant SDK · 给应用接上 Nyx 助手",
       description: "NyxID Assistant SDK 让网页和原生应用接入用户已授权的 NyxID 服务，并通过宿主工具读取和操作当前界面。",
@@ -27,6 +25,9 @@ export const locales = {
       readOnly: "只读模式",
       status: "状态",
       ticket: "工单",
+      ticketsTitle: "NyxID 工单筛选",
+      configureServer: "请在开发服务器上配置 NYXID_BASE_URL 和 NYXID_AGENT_KEY。",
+      terminal: "终端",
       tryCommand: "试一条指令",
       awaitingCommand: "等待指令",
       readFilter: "读取筛选",
@@ -60,7 +61,14 @@ export const locales = {
       openPrompt: "把工单切到待处理。",
       copy: "复制",
     },
-    tickets: chineseTickets,
+    tickets: {
+      names: { invoice: "核对发票", list: "整理清单", address: "更新地址" },
+      states: { all: "全部", open: "待处理", closed: "已关闭" },
+      count: count => `${count} 条`,
+      readOnly: "此页面为只读模式。",
+      readFilter: "读取当前筛选条件和显示的行数。",
+      setFilter: "设置工单筛选条件，并返回显示的行数。",
+    },
     demo: {
       unknown: "未知演练指令。",
       answer: (filter, count) => `「${filter}」筛选下显示 ${count} 条工单。`,
@@ -76,7 +84,6 @@ export const locales = {
   en: {
     lang: "en",
     name: "English",
-    alternate: "zh",
     page: {
       title: "NyxID Assistant SDK · Add a Nyx assistant to your app",
       description: "Connect web and native apps to authorized NyxID services and let the assistant read and act on the current interface.",
@@ -97,6 +104,9 @@ export const locales = {
       readOnly: "Read-only mode",
       status: "Status",
       ticket: "Ticket",
+      ticketsTitle: "NyxID ticket filter",
+      configureServer: "Configure NYXID_BASE_URL and NYXID_AGENT_KEY on the development server.",
+      terminal: "Terminal",
       tryCommand: "Try a command",
       awaitingCommand: "Waiting for a command",
       readFilter: "Read filter",
@@ -135,6 +145,8 @@ export const locales = {
       states: { all: "All", open: "Open", closed: "Closed" },
       count: count => `${count} ${count === 1 ? "ticket" : "tickets"}`,
       readOnly: "This page is in read-only mode.",
+      readFilter: "Read the current filter and displayed row count.",
+      setFilter: "Set the ticket filter and report the displayed row count.",
     },
     demo: {
       unknown: "Unknown demo command.",

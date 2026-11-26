@@ -4,7 +4,7 @@ const script = document.currentScript as HTMLScriptElement | null;
 function mount() {
   if (document.querySelector("nyx-assistant")) return;
   const widget = document.createElement("nyx-assistant");
-  for (const name of ["data-nyxid", "data-verification-origin", "data-proxy", "data-services", "data-key-source", "data-storage"]) {
+  for (const name of ["lang", "data-nyxid", "data-verification-origin", "data-proxy", "data-services", "data-key-source", "data-storage"]) {
     if (script?.hasAttribute(name))
       widget.setAttribute(name, script.getAttribute(name)!);
   }

@@ -1,9 +1,12 @@
 // Each native window starts one instance of this process over private stdin/stdout pipes.
 import { createInterface } from "node:readline";
+import catalog from "./locales.json" with { type: "json" };
 import { z } from "zod";
-import { AssistantHost, NyxIDConnection } from "@chronoai/nyx-assistant-sdk";
+import { AssistantHost, LocalizedError, NyxIDConnection } from "@chronoai/nyx-assistant-sdk";
 import { createNyxChatService } from "@chronoai/nyx-assistant-sdk/nyx-chat";
 
+const language = Object.hasOwn(catalog.locales, process.argv[2]) ? process.argv[2] : catalog.defaultLocale;
+const copy = catalog.locales[language];
 const post = message => process.stdout.write(JSON.stringify(message) + "\n");
 const pending = new Map();
 function native(name, args, signal) {
@@ -22,11 +25,13 @@ const host = base && key ? new AssistantHost(createNyxChatService(new NyxIDConne
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${key}`);
   return fetch(url, { ...init, headers });
-})), () => ({ view: "native-list" })) : undefined;
+})), () => ({ view: "native-list", language })) : undefined;
 
-host?.registerTool({ name: "read_selection", description: "Read the selected row ID and its marked state from this window.",
+if (host) host.language = language;
+
+host?.registerTool({ name: "read_selection", description: copy.readTool,
   parameters: z.object({}), execute: (args, signal) => native("read_selection", args, signal) });
-host?.registerTool({ name: "set_mark", description: "Set the mark of the selected row, identified by ID, in this window.",
+host?.registerTool({ name: "set_mark", description: copy.markTool,
   parameters: z.object({ id: z.string(), marked: z.boolean() }), execute: (args, signal) => native("set_mark", args, signal) });
 const lines = createInterface({ input: process.stdin });
 lines.on("line", async line => {
@@ -37,10 +42,13 @@ lines.on("line", async line => {
       pending.delete(message.id);
       resolve?.(message.result);
     } else if (message.type === "send" || message.type === "resume") {
-      if (!host) throw Error("请为原生示例配置 NYXID_BASE_URL 和 NYXID_AGENT_KEY");
+      if (!host) throw Error(copy.configure);
       const text = await (message.type === "send" ? host.send(message.text) : host.resume());
       post({ type: "answer", text });
     }
-  } catch (error) { post({ type: "error", text: error.message, pending: Boolean(host?.pendingRequestId) }); }
+  } catch (error) {
+    const text = error instanceof LocalizedError ? error.localize(language) : error.message;
+    post({ type: "error", text, pending: Boolean(host?.pendingRequestId) });
+  }
 });
 lines.on("close", () => host?.dispose());
