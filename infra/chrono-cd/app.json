@@ -1,0 +1,24 @@
+{
+  "services": {
+    "sdk-server": {
+      "image": "ghcr.io/chronoaiproject/nyx-assistant-sdk-server:7c1b3799e5fc5569f4e56c3f705065d40bb9d6b4@sha256:dd01912879c252167565a9c6877e07304c610e6bf5f7308edbb36e774b98032d",
+      "port": 8080,
+      "routes": [
+        "/"
+      ],
+      "expose": "public",
+      "health_path": "/healthz",
+      "replicas": 1,
+      "resources": {
+        "cpu_request": "25m",
+        "memory_request": "48Mi",
+        "cpu_limit": "250m",
+        "memory_limit": "128Mi"
+      },
+      "env": {
+        "NYXID_ORIGIN": "https://nyx-api.chrono-ai.fun",
+        "SDK_ORIGINS": "https://live.trureturing.org,https://chrono-metaverse-chronoai.apps.nyxid.ai,https://chrono-metaverse-prod-chronoai.apps.nyxid.ai"
+      }
+    }
+  }
+}

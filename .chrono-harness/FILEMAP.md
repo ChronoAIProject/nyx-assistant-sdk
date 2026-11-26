@@ -33,3 +33,4 @@
 | `.github/workflows/server-image.yml` | Dockerfile、转发测试 | 发布 linux/amd64 GHCR 镜像供 chrono-cd 按摘要部署 | 未知 |
 | `test/credential-storage.test.ts` | Web Crypto、模拟 IndexedDB、credential-storage.ts | 检验并发密钥创建、不可导出及授权隔离 | 未知 |
 | `server/README.md` | server 入口和 chrono-cd 配置 | 运维者配置固定上游和接入站点 | 未知 |
+| `infra/chrono-cd/app.json` | 已发布的 GHCR 摘要、来源和资源规格 | chrono-cd 创建和更新专用转发服务 | 一份运行副本 |
