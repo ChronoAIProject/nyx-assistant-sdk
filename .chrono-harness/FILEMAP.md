@@ -30,7 +30,11 @@
 | `server/server.mjs` | HTTP、固定 NyxID 上游、站点来源 | 静态挂件授权、流式 Responses 和恢复 | 聊天前一次 self 核验 |
 | `server/Dockerfile` | Node 和 server.mjs | chrono-cd 独立非 root 容器 | 镜像构建成本未知 |
 | `test/server.test.mjs` | server.mjs、受控的上游 | Node 检查子凭据契约和转发行为 | 未知 |
-| `.github/workflows/server-image.yml` | Dockerfile、转发测试 | 发布 linux/amd64 GHCR 镜像供 chrono-cd 按摘要部署 | 未知 |
+| `.github/workflows/server-image.yml` | Dockerfile、转发与部署测试、GitHub 环境密钥、本次构建摘要 | GitHub Actions 构建 linux/amd64 镜像并部署对应 chrono-cd 应用 | 未知 |
 | `test/credential-storage.test.ts` | Web Crypto、模拟 IndexedDB、credential-storage.ts | 检验并发密钥创建、不可导出及授权隔离 | 未知 |
 | `server/README.md` | server 入口和 chrono-cd 配置 | 运维者配置固定上游和接入站点 | 未知 |
-| `infra/chrono-cd/app.json` | 已发布的 GHCR 摘要、来源和资源规格 | chrono-cd 创建和更新专用转发服务 | 一份运行副本 |
+| `infra/chrono-cd/app.json` | 初始 GHCR 摘要、来源和资源规格 | 运维者创建或重建生产转发服务 | 一份运行副本 |
+| `infra/chrono-cd/app.staging.json` | 初始 GHCR 摘要、Metaverse 测试站来源和资源规格 | 运维者创建或重建测试转发服务 | 一份运行副本 |
+| `infra/chrono-cd/deploy.mjs` | 工作流分支、环境、提交、GHCR 摘要、限定范围的 NyxID Key 和线上应用规格 | 工作流按摘要更新服务，核对修订、Pod 和公网探针 | 一次 PUT、至多三次 CD 读取及一次公网探针 |
+| `infra/chrono-cd/deploy.test.mjs` | 部署入口、模拟 fetch 和计时 | Node 验证环境隔离、条件写入与实际镜像核对 | 未知 |
+| `infra/chrono-cd/key-scope.mjs` | 部署目标、线上规格、已登记的 NyxID 操作 | 运维者为自动部署生成限定应用和请求体的操作范围 | 一次本地 JSON 转换 |
