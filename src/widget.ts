@@ -260,7 +260,7 @@ export class NyxAssistantElement extends HTMLElement {
     host.language = this.#locale;
     this.#host = host;
     this.#grant = grant;
-    this.#voice.setConnection(connection, grant?.access.managementUrl);
+    this.#voice.setConnection(connection, grant?.access.managementUrl, grant ? this.#voiceService : "auto");
     if (grant) {
       this.#el(".access p").textContent = grant.access.services.join(this.#text("separator"));
       this.#el<HTMLAnchorElement>(".access a").href = grant.access.managementUrl;
@@ -275,21 +275,27 @@ export class NyxAssistantElement extends HTMLElement {
       }),
     );
   }
+  get #baseServices() {
+    return (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim()).filter(Boolean);
+  }
+  get #voiceService() {
+    if (this.dataset.services === "@key") return "auto";
+    return this.#baseServices.includes("nyxbot-voice") ? "nyxbot-voice" : "llm-openai";
+  }
   #createFlow() {
     let storage: Storage | undefined;
     let credentialStorage: Storage | null | undefined;
     if (this.dataset.storage === "local") credentialStorage = localStorage;
     else if (this.dataset.storage !== undefined) credentialStorage = null;
     try { storage = sessionStorage; } catch { /* Storage is optional for this visit. */ }
-    const requested = this.dataset.services ?? "llm-nyx,chrono-llm-public";
-    const base = requested.split(",").map(s => s.trim()).filter(Boolean);
-    const botVoice = base.includes("nyxbot-voice");
-    const services = requested === "@key" ? "@key" : base.filter(s => s !== "nyxbot-voice");
-    if (services !== "@key" && this.voiceEnabled) services.push(botVoice ? "nyxbot-voice" : "llm-openai");
+    const voiceService = this.#voiceService;
+    const services = voiceService === "auto" ? "@key" : this.#baseServices.filter(s => s !== "nyxbot-voice");
+    if (services !== "@key" && this.voiceEnabled) services.push(voiceService);
     return new BrowserAuthorization({
       language: this.#locale,
       base: this.dataset.nyxid, verificationOrigin: this.dataset.verificationOrigin,
       services, storage, credentialStorage,
+      acceptLegacyVoiceCatalog: this.voiceEnabled && this.dataset.services === undefined,
       previousGrant: this.previousGrant,
       ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined,
       catalogServices: this.dataset.catalogServices?.split(","),

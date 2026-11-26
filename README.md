@@ -24,6 +24,8 @@ SDK 官网的「免登录试用」可直接读取或切换演示工单的筛选�
 
 语音默认开启。首次授权请求文字所需的 `llm-nyx,chrono-llm-public`，并为临时通话加入 `llm-openai`。开发者可以设置 `data-voice="false"` 或 `element.voiceEnabled = false` 关闭语音。纯临时语音可以设置 `data-services="llm-openai"`。显式指定 `data-services="nyxbot-voice"` 或通过 `@key` 授权具体的 Bot Voice 连接时，挂件沿用该持久 Bot 的通话设置。
 
+使用默认配置时，旧 Key 如果还包含一项通用的 `nyxbot-voice` 目录连接，也可以直接使用已授权的 OpenAI 连接通话。启用了逐次操作审批的账号，拨号时还需在 NyxID 确认本次 OpenAI 通话请求。
+
 省略 `data-nyxid` 时使用官方 SDK 转发服务，并在 `https://nyxid.ai` 授权。自建部署用 `data-nyxid` 指定 SDK 转发服务，用 `data-verification-origin` 指定 NyxID 登录站点。浏览器通话需要支持 Voice HTTP 和 WebSocket 的 SDK 转发服务，部署方通过 `NYXID_ORIGIN` 固定上游。使用 `data-proxy` 的宿主可通过 `element.bind(NyxIDConnection.fromAgentKey(relayUrl, childCredential))` 绑定语音连接。
 
 ## 用 Agent Key 连接 Bot Voice

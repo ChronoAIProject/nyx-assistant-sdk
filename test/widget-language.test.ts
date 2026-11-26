@@ -138,6 +138,57 @@ for (const voiceEnabled of [true, false]) {
   });
 }
 
+test("the default widget reuses its previous catalog voice grant for a temporary call", { timeout: 3500 }, async t => {
+  const { TemporaryCall } = await import("../src/temporary-call.ts");
+  const { promise: started, resolve: connected } = Promise.withResolvers<void>();
+  const start = t.mock.method(TemporaryCall.prototype, "start", async () => connected());
+  for (const [name, value] of [["Option", dom.window.Option], ["Audio", dom.window.Audio]] as const) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { configurable: true, value });
+    t.after(() => previous ? Object.defineProperty(globalThis, name, previous) : Reflect.deleteProperty(globalThis, name));
+  }
+  t.mock.method(TemporaryCall.prototype, "end", async () => {});
+  const requested = ["chrono-llm-public", "llm-nyx", "llm-openai"];
+  const rows = [...requested, "nyxbot-voice"].map((slug, i) => ({
+    id: "00000000-0000-4000-8000-00000000000" + i,
+    slug, catalog_service_slug: slug, is_active: true,
+  }));
+  const identity = { credential_id: "child", api_key: {
+    id: "old-widget-key", owner_id: "owner", scopes: "proxy",
+    allow_all_services: false, allow_all_nodes: false, allow_auto_connected_services: false,
+    allowed_node_ids: [], allowed_service_ids: rows.map(r => r.id), effective_services: rows,
+  } };
+  const paths: string[] = [];
+  t.mock.method(globalThis, "fetch", async (url: URL, init: RequestInit) => {
+    paths.push((init.method ?? "GET") + " " + url.pathname);
+    if (url.pathname.endsWith("/request")) return Response.json({ device_code: "device", user_code: "ABC-DEF",
+      verification_uri: "https://nyxid.ai/login/agent-key", interval: 1, expires_in: 60 });
+    if (url.pathname.endsWith("/poll")) return Response.json({ ...identity, credential: "child" });
+    if (url.pathname.endsWith("/self")) return init.method === "DELETE" ? new Response(null, { status: 204 }) : Response.json(identity);
+    throw Error("Unexpected route: " + url.pathname);
+  });
+  const widget = new NyxAssistantElement();
+  widget.dataset.storage = "memory";
+  document.body.append(widget);
+  const ready = new Promise<void>(resolve => widget.addEventListener("nyx-ready", () => resolve(), { once: true }));
+  try {
+    widget.connect();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const view = widget.shadowRoot!;
+    const link = new URL(view.querySelector<HTMLAnchorElement>(".verify")!.href);
+    assert.deepEqual(link.searchParams.get("services")!.split(","), requested);
+    await ready;
+    assert.deepEqual(widget.access?.services, [...requested, "nyxbot-voice"].sort());
+    view.querySelector<HTMLButtonElement>(".voice-toggle")!.click();
+    await started;
+    assert.equal(start.mock.callCount(), 1);
+    assert.deepEqual(paths, ["POST /api/v1/auth/agent-key/request", "POST /api/v1/auth/agent-key/poll", "GET /api/v1/auth/agent-key/self"]);
+  } finally {
+    widget.remove();
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+});
+
 test("a catalog-only voice grant can refresh the same key and select a newly published Bot", async t => {
   const { WidgetVoice } = await import("../src/widget-voice.ts");
   const { NyxIDConnection } = await import("../src/connection.ts");

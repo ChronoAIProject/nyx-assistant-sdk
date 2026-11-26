@@ -29,6 +29,8 @@ export interface BrowserAuthorizationOptions {
   verificationOrigin?: string;
   /** Explicit service slugs for a restricted grant, or the grants on the key approved at NyxID. */
   services: readonly string[] | "@key";
+  /** Allow the single generic Bot Voice catalog connection on older default widget keys. */
+  acceptLegacyVoiceCatalog?: boolean;
   keySource?: "existing" | "new";
   ownerId?: string;
   ownerType?: "personal";
@@ -51,9 +53,15 @@ function defaultCredentialStorage() {
   } catch { /* Browser storage access can be denied for this origin. */ }
 }
 
-function matchesRequestedServices(key: z.infer<typeof agentKeyResponse>["api_key"], requested: string[]) {
+function matchesRequestedServices(key: z.infer<typeof agentKeyResponse>["api_key"], requested: string[], acceptLegacyVoiceCatalog = false) {
   const rows = key.effective_services;
   const services = new Set(rows.map(row => row.catalog_service_slug ?? row.slug));
+  if (acceptLegacyVoiceCatalog && !requested.includes("nyxbot-voice")) {
+    const voice = rows.filter(row => (row.catalog_service_slug ?? row.slug) === "nyxbot-voice");
+    if (voice.length === 1 && voice[0]?.slug === "nyxbot-voice" && voice[0].catalog_service_slug === "nyxbot-voice") {
+      services.delete("nyxbot-voice");
+    }
+  }
   const ids = new Set(rows.map(row => row.id));
   const scopes = key.scopes.trim().split(/\s+/);
   return !key.allow_all_services && !key.allow_auto_connected_services && !key.allow_all_nodes &&
@@ -290,7 +298,7 @@ export class BrowserAuthorization {
     if (signal.aborted || !key || !identity || (this.#options.ownerId && key.owner_id !== this.#options.ownerId) ||
         (this.#options.ownerType && key.owner_type !== this.#options.ownerType) ||
         this.#options.catalogServices?.some(slug => !key.effective_services.some(row => row.catalog_service_slug === slug)) ||
-        (this.#services !== "@key" && !matchesRequestedServices(key, this.#services))) {
+        (this.#services !== "@key" && !matchesRequestedServices(key, this.#services, this.#options.acceptLegacyVoiceCatalog))) {
       await revokeChild();
       throw this.#error("invalidGrant");
     }

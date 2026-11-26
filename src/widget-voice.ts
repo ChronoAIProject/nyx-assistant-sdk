@@ -6,12 +6,14 @@ import { TemporaryCall } from "./temporary-call.ts";
 import { WidgetCall } from "./widget-call.ts";
 
 type Service = AgentIdentity["services"][number];
+type VoiceService = "llm-openai" | "nyxbot-voice" | "auto";
 export class WidgetVoice {
   #root: HTMLElement;
   #call?: TemporaryCall | WidgetCall;
   #temporary: Service[] = [];
   #load?: AbortController;
   #connection?: NyxIDConnection;
+  #voiceService: VoiceService = "auto";
   #bots: { service: Service; agent: VoiceAgent }[] = [];
   #agent?: VoiceAgent;
   #choices?: VoiceOptions;
@@ -95,9 +97,10 @@ export class WidgetVoice {
   }
   #el<T extends HTMLElement = HTMLElement>(selector: string) { return this.#root.querySelector<T>(selector)!; }
   #select(selector: string) { return this.#el<HTMLSelectElement>(selector); }
-  setConnection(connection?: NyxIDConnection, managementUrl?: string) {
+  setConnection(connection?: NyxIDConnection, managementUrl?: string, voiceService: VoiceService = "auto") {
     const ended = this.reset();
     this.#connection = connection;
+    this.#voiceService = voiceService;
     const setup = this.#el<HTMLAnchorElement>(".voice-setup");
     const key = this.#el<HTMLAnchorElement>(".voice-key");
     setup.hidden = key.hidden = !managementUrl;
@@ -150,6 +153,18 @@ export class WidgetVoice {
     this.#setStatus("voiceLoading");
     return this.#load.signal;
   }
+  async #chooseTemporary(services: Service[]) {
+    this.#temporary = services;
+    this.#el(".voice-name").textContent = this.#text("temporaryVoice");
+    const select = this.#select(".voice-provider");
+    select.replaceChildren(...services.map(s => new Option(s.label + " · " + s.id.slice(0, 8), s.id)));
+    if (services.length === 1) return this.#start();
+    select.prepend(new Option(this.#text("voiceProvider"), ""));
+    select.value = "";
+    select.parentElement!.hidden = this.#el(".voice-settings").hidden = false;
+    this.#el<HTMLDetailsElement>(".voice-settings").open = true;
+    this.#ready();
+  }
   async #discover() {
     const signal = this.#loading();
     this.#el(".voice-repair").hidden = this.#el(".voice-settings").hidden = true;
@@ -159,22 +174,9 @@ export class WidgetVoice {
       if (!this.#connection!.hasAgentKey) throw new LocalizedError("voiceProxy");
       const connection = this.#connection!;
       const identity = await connection.getAgentIdentity(signal);
-      const services = identity.services.filter(s => s.active && (s.catalogSlug ?? s.slug) === "nyxbot-voice");
-      if (!services.length) {
-        this.#temporary = identity.services.filter(s => s.active && (s.catalogSlug ?? s.slug) === "llm-openai");
-        if (this.#temporary.length) {
-          this.#el(".voice-name").textContent = this.#text("temporaryVoice");
-          const select = this.#select(".voice-provider");
-          select.replaceChildren(...this.#temporary.map(s => new Option(s.label + " · " + s.id.slice(0, 8), s.id)));
-          if (this.#temporary.length === 1) { await this.#start(); return; }
-          select.prepend(new Option(this.#text("voiceProvider"), ""));
-          select.value = "";
-          select.parentElement!.hidden = this.#el(".voice-settings").hidden = false;
-          this.#el<HTMLDetailsElement>(".voice-settings").open = true;
-          this.#ready();
-          return;
-        }
-      }
+      signal.throwIfAborted();
+      const services = this.#voiceService === "llm-openai" ? [] :
+        identity.services.filter(s => s.active && (s.catalogSlug ?? s.slug) === "nyxbot-voice");
       const bots = [];
       for (const service of services) {
         signal.throwIfAborted();
@@ -188,8 +190,13 @@ export class WidgetVoice {
       signal.throwIfAborted();
       this.#bots = bots;
       if (!bots.length) {
+        if (this.#voiceService !== "nyxbot-voice") {
+          const providers = identity.services.filter(s => s.active && (s.catalogSlug ?? s.slug) === "llm-openai");
+          if (providers.length) { await this.#chooseTemporary(providers); return; }
+        }
         this.#el(".voice-repair").hidden = false;
         if (!services.length) this.#el(".voice-setup").hidden = true;
+        if (this.#voiceService === "llm-openai") throw new LocalizedError("voiceNoProvider");
         throw new LocalizedError(services.length ? "voiceNeedsBinding" : "voiceNoBot");
       }
       const bot = this.#select(".voice-bot");
