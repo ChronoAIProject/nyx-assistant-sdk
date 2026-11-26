@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101018">
-  <meta name="description" content="NyxID Assistant SDK 让网页和原生应用接入用户已授权的 NyxID 服务，并通过宿主工具读取和操作当前界面。">
-  <title>NyxID Assistant SDK · 给应用接上 Nyx 助手</title>
+  <meta name="description" content="使用 NyxID Agent Key 登录，查看当前 Agent 身份和已授权的服务连接。">
+  <title>NyxID · Agent 身份与服务</title>
   <link rel="stylesheet" href="./style.css">
   <script defer src="./playground.js"></script>
   <script defer src="./nyx-widget.js"></script>
@@ -14,7 +14,7 @@
   <a class="skip" href="#main">跳到主要内容</a>
   <header class="site-header">
     <div class="shell header-inner">
-      <a class="brand" href="./"><span class="mark" aria-hidden="true"><span></span></span><span>NyxID <b>Assistant SDK</b></span></a>
+      <a class="brand" href="./"><span class="mark" aria-hidden="true"><span></span></span><span>NyxID <b>Agent 身份</b></span></a>
       <nav aria-label="站点导航">
         <a href="#playground">演练</a>
         <a href="#quickstart">快速开始</a>
@@ -26,14 +26,12 @@
   <main id="main">
     <section class="hero shell" aria-labelledby="intro">
       <div class="intro">
-        <a class="intro-label" href="https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/tag/v0.1.0-alpha.11"><span class="signal" aria-hidden="true"></span> v0.1.0-alpha.11</a>
-        <h1 id="intro">让助手理解页面，<br><em>也能操作页面。</em></h1>
-        <p>将用户已授权的 NyxID 服务接入你的应用。用类型化工具把页面状态、可执行操作和真实结果交给同一段对话。</p>
+        <h1 id="intro">用 Agent Key 登录，<br><em>查看已授权的服务。</em></h1>
+        <p>用已有的 Agent Key 登录，查看它获准访问哪些服务，并前往 NyxID 调整这把 Key 的权限。</p>
         <div class="hero-actions">
-          <a class="primary" href="#quickstart">快速开始 <span aria-hidden="true">→</span></a>
-          <a class="secondary" href="#playground">运行演练 <span aria-hidden="true">↘</span></a>
+          <button type="button" class="primary" id="agent-login" disabled>打开 Agent 身份 <span aria-hidden="true">→</span></button>
+          <a class="secondary" href="#identity-sdk">接入说明 <span aria-hidden="true">↓</span></a>
         </div>
-        <div class="platforms">浏览器挂件 <span aria-hidden="true"></span> TypeScript <span aria-hidden="true"></span> 原生应用</div>
       </div>
 
       <section class="playground" id="playground" aria-labelledby="demo-title">
@@ -81,6 +79,25 @@
       </section>
     </section>
 
+    <section class="section shell" id="identity-sdk" aria-labelledby="identity-title">
+      <div class="section-header">
+        <h2 id="identity-title">在应用里使用 Agent Key</h2>
+        <a class="text-link" href="https://github.com/ChronoAIProject/nyx-assistant-sdk#以-agent-key-登录和查看授权">SDK 接入说明 ↗</a>
+      </div>
+      <div class="cards">
+        <article class="card">
+          <h3>识别登录的 Agent</h3>
+          <p>用 NyxID 返回的 Key ID 关联业务记录。同一把 Key 可以多次登录，每次登录都有独立的凭据 ID。</p>
+          <pre><code>const agent = NyxIDConnection.fromAgentKey(base, credential);
+const identity = await agent.getAgentIdentity();</code></pre>
+        </article>
+        <article class="card">
+          <h3>查看和调整已授权服务</h3>
+          <p>打开 Agent 身份面板即可查看授权服务。点击「在 NyxID 调整权限」进入当前 Key 的设置页，保存后回到面板，点击「刷新服务」核对结果。</p>
+        </article>
+      </div>
+    </section>
+
     <section class="section shell" id="quickstart" aria-labelledby="start-title">
       <div class="section-header">
         <div>
@@ -97,9 +114,10 @@
           <div class="code-card">
             <div class="code-top"><span>HTML</span><button type="button" data-copy="install-widget" aria-label="复制 HTML 挂件代码" hidden>复制</button></div>
             <pre><code id="install-widget">&lt;script defer
-  src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.1.0-alpha.11/browser/nyx-widget.js"
+  src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.2.0-alpha.2/browser/nyx-widget.js"
   data-nyxid="https://sdk.example.com"
-  data-verification-origin="https://nyxid.ai"&gt;&lt;/script&gt;</code></pre>
+  data-verification-origin="https://nyxid.ai"
+  data-services="@key"&gt;&lt;/script&gt;</code></pre>
           </div>
           <div class="card-links">
             <a class="text-link" href="https://github.com/ChronoAIProject/nyx-assistant-sdk/tree/dev/server#readme">转发服务配置 <span aria-hidden="true">↗</span></a>
@@ -109,10 +127,10 @@
         <article class="card">
           <div class="card-icon terminal" aria-hidden="true">&gt;_</div>
           <h3>接入自己的界面</h3>
-          <p>在自定义网页或原生宿主中使用 <code>AssistantHost</code>。每个窗口和登录身份创建一个实例，并注册该实例的工具。</p>
+          <p>网页用 <code>BrowserAuthorization</code> 登录，从 <code>identity.services</code> 展示授权列表，用 <code>managementUrl</code> 打开这把 Key 的设置页。</p>
           <div class="code-card">
             <div class="code-top"><span>TERMINAL</span><button type="button" data-copy="install-sdk" aria-label="复制 npm 安装命令" hidden>复制</button></div>
-            <pre><code id="install-sdk">npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0-alpha.11/chronoai-nyx-assistant-sdk-0.1.0-alpha.11.tgz</code></pre>
+            <pre><code id="install-sdk">npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.2.0-alpha.2/chronoai-nyx-assistant-sdk-0.2.0-alpha.2.tgz</code></pre>
           </div>
           <div class="card-links">
             <a class="text-link" href="https://github.com/ChronoAIProject/nyx-assistant-sdk#接入当前页面">TypeScript 接入 <span aria-hidden="true">↗</span></a>
@@ -134,7 +152,7 @@
 
   <footer class="site-footer">
     <div class="shell footer-inner">
-      <a class="brand" href="./"><span class="mark" aria-hidden="true"><span></span></span><span>NyxID <b>Assistant SDK</b></span></a>
+      <a class="brand" href="./"><span class="mark" aria-hidden="true"><span></span></span><span>NyxID <b>Agent 身份</b></span></a>
       <nav aria-label="项目链接">
         <a href="https://github.com/ChronoAIProject/nyx-assistant-sdk/releases">发布版本 ↗</a>
         <a href="https://github.com/ChronoAIProject/nyx-assistant-sdk/issues">反馈问题 ↗</a>
@@ -144,7 +162,8 @@
   <nyx-assistant
     data-nyxid="https://nyx-assistant-sdk-chronoai.apps.nyxid.ai"
     data-verification-origin="https://nyxid.ai"
-    data-key-source="new">
+    data-services="@key"
+    data-key-source="existing">
     <button slot="prompt" type="button">当前筛选显示几条工单？</button>
     <button slot="prompt" type="button">把工单切到待处理。</button>
   </nyx-assistant>

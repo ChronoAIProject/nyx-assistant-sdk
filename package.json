@@ -1,7 +1,7 @@
 {
   "name": "@chronoai/nyx-assistant-sdk",
-  "version": "0.1.0-alpha.12",
-  "description": "NyxID client SDK for exposing a host application's context and tools to an authorized service",
+  "version": "0.2.0-alpha.2",
+  "description": "NyxID Agent Key identities, authorized service connections, and assistant tools for host applications",
   "type": "module",
   "exports": {
     ".": {
@@ -15,6 +15,10 @@
     "./agent-key": {
       "types": "./dist/widget-auth.d.ts",
       "import": "./dist/widget-auth.js"
+    },
+    "./agent-verifier": {
+      "types": "./dist/agent-verifier.d.ts",
+      "import": "./dist/agent-verifier.js"
     },
     "./markdown": {
       "types": "./dist/markdown.d.ts",
