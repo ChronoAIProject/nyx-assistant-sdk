@@ -47,7 +47,9 @@ export async function deploy({ ref, environment, sha, digest, key }, { request =
     try {
       response = await request(`${path}${suffix}?org_id=${ORG}`, {
         method, body, redirect: 'error', signal: AbortSignal.timeout(60_000),
-        headers: { 'X-API-Key': key, 'Content-Type': 'application/json', ...headers },
+        headers: {
+          'X-API-Key': key, 'User-Agent': 'nyx-assistant-sdk-deploy', 'Content-Type': 'application/json', ...headers,
+        },
       });
     } catch {
       throw new Error(`chrono-cd ${method} ${suffix || 'app'} request failed`);
