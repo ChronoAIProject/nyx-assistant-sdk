@@ -4,19 +4,19 @@
 
 首个适配器使用 Metaverse 已接通的 `llm-nyx` 服务与 `nyxagent/chat` 模型。Nyx 聊天和 CMA 都是 NyxID 服务，各自使用独立授权与会话。首版联调 Nyx 聊天。[项目目标与验收条件](https://github.com/ChronoAIProject/nyx-assistant-sdk/issues/1)
 
-SDK 官网的「Nyx 助手」可连接 NyxID，用自然语言查询或切换工单筛选。也可点击免登录演练的固定指令。两种方式都使用同一组宿主工具，开启只读模式后会拒绝写入。[SDK 官网](https://chronoaiproject.github.io/nyx-assistant-sdk/)
+SDK 官网的「免登录试用」可直接读取或切换演示工单的筛选条件。自由对话需要在「Nyx 助手」中授权 NyxID。连接成功后，首页和助手中会显示已授权的服务及对应 Key 的权限管理入口。两者使用同一组宿主工具，开启只读模式后会拒绝写入。[中文官网](https://chronoaiproject.github.io/nyx-assistant-sdk/zh/) · [English](https://chronoaiproject.github.io/nyx-assistant-sdk/en/)
 
 ## 给静态网页添加聊天挂件
 
 在 HTML 加入一行脚本，页面会出现「Nyx 助手」按钮。脚本也随 npm 包提供，可复制 `browser/nyx-widget.js` 到自己的静态站点。
 
 ```html
-<script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.1.0-alpha.11/browser/nyx-widget.js" data-proxy="/"></script>
+<script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.1.0/browser/nyx-widget.js" data-proxy="/"></script>
 ```
 
-`data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。独立转发服务部署于 chrono-cd，使用 `data-nyxid` 指向服务地址，并设置 `data-verification-origin="https://nyxid.ai"`。部署方通过 `SDK_ORIGINS` 配置接入站点。挂件默认使用内存。设置 `data-storage="local"` 需要浏览器支持 Web Locks。同源标签页按站点配置依次连接并复用已保存的授权。挂件通过 Web Crypto 的 AES-GCM 加密子凭据，密文保存在站点 localStorage，不可导出的密钥存于该源的 IndexedDB。浏览器恢复时先迁移 alpha.4 的明文记录，再向 NyxID 核验。能在同源运行的脚本仍然可以使用已授权的凭据。断开授权会撤销当前子凭据并通知同源标签页。
+`data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。独立转发服务部署于 chrono-cd，使用 `data-nyxid` 指向服务地址，并设置 `data-verification-origin="https://nyxid.ai"`。部署方通过 `SDK_ORIGINS` 配置接入站点。网页挂件和 `BrowserAuthorization` 默认记住本次登录。同一浏览器再次打开页面或刷新时，挂件会自动核验并恢复。显式设置 `data-storage="memory"`（自建 UI 传 `credentialStorage: null`）可仅在当前页面使用授权。默认模式在缺少 Web Locks、Web Crypto 或无法访问本地存储时使用内存。同源标签页按站点配置依次连接并复用已保存的授权。挂件通过 Web Crypto 的 AES-GCM 加密子凭据，密文保存在站点 localStorage，不可导出的密钥存于该源的 IndexedDB。浏览器恢复时先迁移 alpha.4 的明文记录，再向 NyxID 核验。能在同源运行的脚本仍然可以使用已授权的凭据。断开授权会撤销当前子凭据并通知同源标签页。
 
-`data-services` 用逗号分隔此应用需要的服务，默认是 `llm-nyx,chrono-llm-public`。设置为 `@key` 时，挂件使用用户在 NyxID 授权页选择的 Agent Key 原有服务授权，适合同时接入 Bot Voice 等具体连接。`data-key-source="new"` 在 NyxID 授权页预填创建专用 Key，默认预选已有 Key。批准后的实际权限由挂件按此服务列表核验。未完成的申请保存在当前标签页，刷新后点连接可以继续原申请。自有 UI 可从 `@chronoai/nyx-assistant-sdk/agent-key` 导入 `BrowserAuthorization`，传入 NyxID 的 `base`、登录页 `verificationOrigin`、`services` 和 `clientLabel`；`connect(signal, showLink)` 提供授权链接，`restore(signal)` 恢复并核验已存凭据。返回的 `connection` 可直接创建聊天适配器。
+`data-services` 用逗号分隔此应用需要的服务，默认是 `llm-nyx,chrono-llm-public`。设置为 `@key` 时，挂件使用用户在 NyxID 授权页选择的 Agent Key 原有服务授权，适合同时接入 Bot Voice 等具体连接。`data-key-source="new"` 在 NyxID 授权页预填创建专用 Key，默认预选已有 Key。批准后的实际权限由挂件按此服务列表核验。未完成的申请保存在当前标签页，刷新后点连接可以继续原申请。自有 UI 可从 `@chronoai/nyx-assistant-sdk/agent-key` 导入 `BrowserAuthorization`，传入 NyxID 的 `base`、登录页 `verificationOrigin`、`services` 和 `clientLabel`；`connect(signal, showLink)` 提供授权链接，`restore(signal)` 恢复并核验已存凭据。返回的 `connection` 可直接创建聊天适配器，`access.services` 和 `access.managementUrl` 分别是已核验的服务列表和当前 Key 的管理地址。
 
 ## 用 Agent Key 连接 Bot Voice
 
@@ -68,11 +68,11 @@ await peer.setRemoteDescription({ type: "answer", sdp: call.sdp_answer });
 
 两种通话都由宿主每秒调用一次 `voice.heartbeat(playedMs, audible)`。传入实际已播放到的毫秒位置和扬声器是否正在出声。挂断时先调用 `await voice.control("end")`，再释放心跳定时器、音轨、播放器和 peer。静音与恢复使用 `control("mute")` 和 `control("unmute")`。支持播报的选项还可以使用 `announce({ text })` 或 `announce({ greeting: true })`。
 
-应用已有聊天面板时，从 `@chronoai/nyx-assistant-sdk/widget` 导入 `NyxAssistantElement`，使用 `customElements.define("nyx-assistant", NyxAssistantElement)` 注册一次。创建元素后先设置 `layout="embedded"`、连接参数、`context` 回调及可选的 `instructions`，再挂载。模块导入不会在页面上添加悬浮入口。宿主用 `nyx-ready` 注册页面工具；`nyx-state` 可读取元素的 `busy` 和 `host`，`nyx-answer` 提供本轮已确认的答复。通过 `sendMessage(text)` 可以提交用户明确选择的操作。
+应用已有聊天面板时，从 `@chronoai/nyx-assistant-sdk/widget` 导入 `NyxAssistantElement`，使用 `customElements.define("nyx-assistant", NyxAssistantElement)` 注册一次。创建元素后先设置 `layout="embedded"`、连接参数、`context` 回调及可选的 `instructions`，再挂载。模块导入不会在页面上添加悬浮入口。宿主用 `nyx-ready` 注册页面工具；`nyx-state` 可读取元素的 `busy` 和 `host`，`nyx-answer` 提供本轮已确认的答复。宿主按钮调用元素的 `connect()` 即可打开连接流程。监听 `nyx-state` 并读取 `element.access` 可同步服务列表和管理链接，断开后该属性为 `undefined`。通过 `sendMessage(text)` 可以提交用户明确选择的操作。
 
 有网站登录的宿主可通过 `data-owner-id` 核验当前个人账号，`data-catalog-services` 指定须与 NyxID 目录身份匹配的服务。按账号或工作区切换时重新创建元素。设置 `data-session` 为当前工作区编号后，已验证的同一浏览器子凭据可在当前标签页恢复最近 30 条聊天记录。发生刷新时，已取得响应编号的请求从原响应读取；旧窗口未确认的页面操作提示用户核对。宿主可监听 `nyx-recovery` 打开已有聊天面板。
 
-在主视图中放置 `<nyx-assistant>` 元素，可指定挂件位置。将连接配置写在该元素上，用页面 CSS 设置其定位。
+在主视图中放置 `<nyx-assistant>` 元素，可指定挂件位置。将连接配置写在该元素上，用页面 CSS 设置其定位。挂件依次匹配元素的 `lang`、页面 `<html lang>` 和浏览器首选语言。支持 `zh-CN`、`en-GB` 等地区标签，找不到匹配时使用简体中文。自动挂载时也可在 `<script>` 上指定 `lang`。运行时修改元素或页面的 `lang` 会更新控件、无障碍标签和当前状态，并保留会话与输入草稿。
 
 控制台页面可选 `appearance="console"`，通过 `--nyx-mark: url(...)` 引用自己的标识，通过 `--nyx-panel-surface` 指定面板背景。若宿主提供 `<button type="button" slot="prompt">读取当前视图</button>`，已连接且对话为空时可点击填入输入框，再编辑和发送。
 
@@ -127,7 +127,7 @@ npm pack
 接入方也可以安装已经发布的固定版本。
 
 ```sh
-npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0-alpha.11/chronoai-nyx-assistant-sdk-0.1.0-alpha.11.tgz
+npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0/chronoai-nyx-assistant-sdk-0.1.0.tgz
 ```
 
 运行端需要 Fetch、Web Streams、Web Crypto 和 AbortSignal.any。应用可以使用自己的聊天界面。
@@ -158,6 +158,8 @@ remove();       // 该工具随宿主功能卸载。
 host.dispose(); // 关闭窗口、注销或切换身份时销毁该实例。
 ```
 
+自建界面可以设置 `host.language`（如 `"zh-CN"`）来选择 SDK 宿主生成的诊断和工具错误文案。`BrowserAuthorization` 接受 `language` 选项。SDK 导出的 `LocalizedError` 可通过 `error.localize(language)` 按当前界面语言显示，同时保留 HTTP 状态码等参数。
+
 每个窗口和登录身份创建一个独立实例。处理函数应在执行时读取当前业务状态，检查权限，异步写入前检查传入的 AbortSignal。已拒绝的业务操作返回 `{ok:false, code, message}`，只有确认成功后才返回 `{ok:true, value}`。上下文会进入模型输入，应只包含当前请求需要的数据。
 
 ## 服务与工具契约
@@ -176,6 +178,10 @@ host.dispose(); // 关闭窗口、注销或切换身份时销毁该实例。
 |---|---|---|
 | 独立网页 | `npm run example:web` | 打开终端显示的网址，要求助手读取筛选再切换为待处理，检查实际行数。勾选只读模式可验证宿主拒绝。 |
 | macOS AppKit | `npm run example:macos` | 两个窗口各运行一个 SDK 实例。选择列表项，要求助手读取并标记，检查原生复选框和另一个窗口的状态。需要 Swift 和 Node.js。 |
+
+网页示例可通过页面上的语言链接或直接访问 `/zh/`、`/en/` 来选择语言。原生示例启动时读取 macOS 首选语言，并将选中的语言传给窗口的 Node 子进程。
+
+扩展语言时，在使用该语言的入口补齐对应目录。SDK 与挂件使用 [messages.ts](src/messages.ts)，官网与网页示例共用 [locales.mjs](site/locales.mjs)，原生窗口与桥接器共用 [locales.json](examples/macos/locales.json)。静态页面路径和语言导航根据网站目录自动生成。
 
 原生示例由 AppKit 执行读写，Node 子进程通过每个窗口独立的标准输入输出管道运行相同的 SDK 与 Nyx 聊天适配器。窗口关闭后子进程结束。[网页示例](examples/web/app.js) · [原生窗口](examples/macos/Window.swift)
 

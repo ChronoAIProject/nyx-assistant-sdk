@@ -1,3 +1,4 @@
+import { LocalizedError } from "./i18n.ts";
 import { agentIdentity, agentKeyResponse, serviceConnection, serviceListResponse, type AgentIdentity } from "./agent-identity.ts";
 
 export const NYXBOT_VOICE_SERVICE = "nyxbot-voice";
@@ -12,11 +13,11 @@ export class NyxIDConnection {
   constructor(baseUrl: string | URL, authenticatedFetch: typeof fetch = fetch) {
     this.#base = new URL(baseUrl);
     if (this.#base.username || this.#base.password || this.#base.search || this.#base.hash) {
-      throw new Error("Use a NyxID base URL without credentials, query or fragment");
+      throw new LocalizedError("baseUrl");
     }
     const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(this.#base.hostname);
     if (this.#base.protocol !== "https:" && !(loopback && this.#base.protocol === "http:")) {
-      throw new Error("NyxID requires HTTPS or a local development endpoint");
+      throw new LocalizedError("secureUrl");
     }
     this.#fetch = authenticatedFetch;
   }
@@ -61,7 +62,7 @@ export class NyxIDConnection {
   /** Paths are supplied as decoded segments. The caller selects an authorized service. */
   request(service: string, path: readonly string[], init: RequestInit = {}, query?: URLSearchParams) {
     if (!/^[a-z0-9][a-z0-9-]*$/.test(service) || !path.length) {
-      throw new Error("Invalid NyxID service or endpoint");
+      throw new LocalizedError("invalidEndpoint");
     }
     return this.#request(this.#url("api/v1/proxy/s/" + service, path, query), init);
   }
@@ -96,7 +97,7 @@ export class NyxIDConnection {
 
   #url(route: string, path: readonly string[], query?: URLSearchParams) {
     if (path.some(part => !part || part === "." || part === ".." || /[/\\%?#]/.test(part))) {
-      throw new Error("Invalid NyxID service or endpoint");
+      throw new LocalizedError("invalidEndpoint");
     }
     const url = new URL(this.#base);
     url.pathname = [url.pathname.replace(/\/$/, ""), route, ...path.map(encodeURIComponent)].join("/");

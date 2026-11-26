@@ -1,4 +1,5 @@
 import { agentIdentity, agentKeyResponse } from "./agent-identity.ts";
+import { defaultLocale, LocalizedError, type MessageKey } from "./i18n.ts";
 import { NyxIDConnection } from "./connection.ts";
 import { isSealed, openCredential, sealCredential } from "./credential-storage.ts";
 import { z } from "zod";
@@ -20,6 +21,7 @@ export interface PreviousGrant {
   forget(): void;
 }
 export interface BrowserAuthorizationOptions {
+  language?: string;
   previousGrant?: () => PreviousGrant | undefined;
   base: string | URL;
   verificationOrigin: string;
@@ -32,10 +34,19 @@ export interface BrowserAuthorizationOptions {
   clientLabel: string;
   /** Supply tab-local storage to resume a pending request after reloading. */
   storage?: Storage;
-  /** Origin-local storage for the encrypted child credential. Requires Web Locks.
+  /** Defaults to localStorage in browsers with Web Locks, IndexedDB and Web Crypto.
+   * Pass null for an in-memory login or a Storage to select the encrypted grant store.
    * The non-exportable key lives in IndexedDB. Each restored grant is checked with NyxID.
    */
-  credentialStorage?: Storage;
+  credentialStorage?: Storage | null;
+}
+
+function defaultCredentialStorage() {
+  try {
+    if (typeof window !== "undefined" && window.navigator.locks && window.crypto?.subtle && window.indexedDB) {
+      return window.localStorage;
+    }
+  } catch { /* Browser storage access can be denied for this origin. */ }
 }
 
 function matchesRequestedServices(key: z.infer<typeof agentKeyResponse>["api_key"], requested: string[]) {
@@ -73,6 +84,10 @@ export class BrowserAuthorization {
   readonly #storageKey: string;
   #active?: AbortController;
 
+  #error(key: MessageKey, value = "") {
+    return new LocalizedError(key, value, this.#options.language ?? defaultLocale);
+  }
+
   constructor(options: BrowserAuthorizationOptions) {
     this.#base = new URL(options.base);
     new NyxIDConnection(this.#base);
@@ -82,6 +97,7 @@ export class BrowserAuthorization {
     this.#origin = verification.origin;
     this.#services = options.services === "@key" ? "@key" : [...new Set(z.array(serviceSlug).min(1).parse(options.services))].sort();
     this.#options = { ...options };
+    if (options.credentialStorage === undefined) this.#options.credentialStorage = defaultCredentialStorage();
     this.#storageKey = "nyx-assistant:pending:" + JSON.stringify([
       this.#base.href, this.#origin, options.ownerId ?? null, this.#services, options.keySource ?? "existing",
     ]);
@@ -107,11 +123,15 @@ export class BrowserAuthorization {
     return Boolean(this.#options.credentialStorage?.getItem(this.credentialStorageKey));
   }
 
+  get persistent() {
+    return Boolean(this.#options.credentialStorage);
+  }
+
   async #withGrantLock<T>(signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
     signal?.throwIfAborted();
     if (!this.#options.credentialStorage) return run();
     const locks = globalThis.navigator?.locks;
-    if (!locks) throw Error("浏览器需要支持 Web Locks 才能使用站点授权存储。");
+    if (!locks) throw this.#error("locksRequired");
     return locks.request(this.credentialStorageKey, { signal }, run);
   }
 
@@ -166,7 +186,7 @@ export class BrowserAuthorization {
       this.#forget(record);
       return undefined;
     }
-    if (!response.ok) throw Error("无法核验已保存的 NyxID 授权（HTTP " + response.status + "）。");
+    if (!response.ok) throw this.#error("restoreFailed", String(response.status));
     const identity = await response.json();
     signal.throwIfAborted();
     if (store.getItem(this.credentialStorageKey) !== record) return undefined;
@@ -192,7 +212,7 @@ export class BrowserAuthorization {
   }
 
   async connect(signal: AbortSignal, showLink: (url: URL, code: string) => void) {
-    if (this.#active) throw Error("此实例已有待完成的 NyxID 授权。");
+    if (this.#active) throw this.#error("approvalActive");
     const controller = new AbortController();
     const active = AbortSignal.any([signal, controller.signal]);
     this.#active = controller;
@@ -215,14 +235,14 @@ export class BrowserAuthorization {
         requested_profile: this.#services === "@key" ? undefined : "nyx-widget", client_label: this.#options.clientLabel,
         client_app: "nyx-assistant-sdk", client_form_factor: "browser",
       }, active);
-      if (!reply.ok) throw Error("NyxID 授权请求失败（HTTP " + reply.status + "）。");
+      if (!reply.ok) throw this.#error("approvalFailed", String(reply.status));
       const value = challenge.parse(await reply.json());
       pending = { ...value, expiresAt: Date.now() + value.expires_in * 1000, nextPollAt: Date.now() + value.interval * 1000 };
     }
     const url = new URL(pending.verification_uri);
     if (url.origin !== this.#origin || url.pathname !== "/login/agent-key" || url.username || url.password || url.hash) {
       this.cancel();
-      throw Error("授权页面地址与配置的 NyxID 登录站点不符。");
+      throw this.#error("invalidApprovalUrl");
     }
     url.search = new URLSearchParams({
       user_code: pending.user_code, login_type: "agent", key_source: this.#options.keySource ?? "existing",
@@ -245,7 +265,7 @@ export class BrowserAuthorization {
       if (delivery.error === "agent_key_login_slow_down") interval += 5000;
       else if (delivery.error !== "agent_key_login_pending") {
         store?.removeItem(this.#storageKey);
-        throw Error("NyxID 授权已拒绝、已交付或已过期，请重新连接。");
+        throw this.#error("approvalEnded");
       }
       pending.nextPollAt = Math.min(Date.now() + interval, pending.expiresAt);
       store?.setItem(this.#storageKey, JSON.stringify(pending));
@@ -259,7 +279,7 @@ export class BrowserAuthorization {
         method: "DELETE", redirect: "error", credentials: "omit", keepalive: true,
         headers: { Authorization: "Bearer " + credential },
       });
-      if (!response.ok && response.status !== 401) throw Error("NyxID 未确认撤销，请重试断开授权。");
+      if (!response.ok && response.status !== 401) throw this.#error("revokeFailed");
       if (record) this.#forget(record);
     };
     const parsed = agentKeyResponse.safeParse(delivery);
@@ -270,7 +290,7 @@ export class BrowserAuthorization {
         this.#options.catalogServices?.some(slug => !key.effective_services.some(row => row.catalog_service_slug === slug)) ||
         (this.#services !== "@key" && !matchesRequestedServices(key, this.#services))) {
       await revokeChild();
-      throw Error("本次浏览器授权已撤销。请核对所选 Key、所有者和服务授权。");
+      throw this.#error("invalidGrant");
     }
     if (!record && this.#options.credentialStorage) {
       try {
@@ -278,11 +298,15 @@ export class BrowserAuthorization {
         signal.throwIfAborted();
         this.#options.credentialStorage.setItem(this.credentialStorageKey, record);
       }
-      catch { await revokeChild(); throw Error("浏览器无法保存此授权，请检查站点存储设置。"); }
+      catch { await revokeChild(); throw this.#error("saveGrantFailed"); }
     }
     const connection = NyxIDConnection.fromAgentKey(this.#base, credential);
     const revoke = () => this.#withGrantLock(undefined, revokeChild);
-    const managementUrl = new URL("/keys/api-key/" + encodeURIComponent(key.id), this.#origin).href;
-    return { identity, connection, revoke, managementUrl, ownerId: key.owner_id, keyId: key.id, credentialId: identity.credentialId };
+    const services = new Set(identity.services.map(row => row.catalogSlug ?? row.slug));
+    const access = Object.freeze({
+      services: Object.freeze([...services].sort()),
+      managementUrl: new URL("/keys/api-key/" + encodeURIComponent(key.id), this.#origin).href,
+    });
+    return { identity, connection, revoke, access, managementUrl: access.managementUrl, ownerId: key.owner_id, keyId: key.id, credentialId: identity.credentialId };
   }
 }

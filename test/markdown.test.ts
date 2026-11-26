@@ -35,3 +35,13 @@ test("parses bold beside Chinese punctuation and keeps code literal", () => {
   assert.equal(msg.querySelector("strong")?.textContent, "「观测指南」");
   assert.equal(msg.querySelector("code")?.textContent, literal);
 });
+
+test("unlabelled images use the page language and keep author-supplied alt text", () => {
+  document.documentElement.lang = "en-AU";
+  try {
+    const message = renderAssistantMarkdown("![](/picture) ![猫](/cat)");
+    assert.deepEqual(Array.from(message.querySelectorAll("a"), a => a.textContent), ["Image", "猫"]);
+  } finally {
+    document.documentElement.removeAttribute("lang");
+  }
+});
