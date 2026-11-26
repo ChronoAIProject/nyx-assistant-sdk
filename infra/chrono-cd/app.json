@@ -17,7 +17,7 @@
       },
       "env": {
         "NYXID_ORIGIN": "https://nyx-api.chrono-ai.fun",
-        "SDK_ORIGINS": "https://live.trureturing.org,https://chrono-metaverse-chronoai.apps.nyxid.ai,https://chrono-metaverse-prod-chronoai.apps.nyxid.ai"
+        "SDK_ORIGINS": "https://live.trureturing.org,https://chrono-metaverse-chronoai.apps.nyxid.ai,https://chrono-metaverse-prod-chronoai.apps.nyxid.ai,https://chronoaiproject.github.io"
       }
     }
   }

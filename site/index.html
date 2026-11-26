@@ -8,6 +8,7 @@
   <title>NyxID Assistant SDK · 给应用接上 Nyx 助手</title>
   <link rel="stylesheet" href="./style.css">
   <script defer src="./playground.js"></script>
+  <script defer src="./nyx-widget.js"></script>
 </head>
 <body>
   <a class="skip" href="#main">跳到主要内容</a>
@@ -41,7 +42,7 @@
             <span class="demo-icon" aria-hidden="true">▤</span>
             <div>
               <h2 id="demo-title">工单演练</h2>
-              <p>免登录 · 固定指令 · 真实 SDK</p>
+              <p>按钮免登录。自由对话请打开右下角的 Nyx 助手。</p>
             </div>
           </div>
           <label class="toggle"><input id="readonly" type="checkbox"><span class="switch" aria-hidden="true"></span>只读模式</label>
@@ -140,5 +141,12 @@
       </nav>
     </div>
   </footer>
+  <nyx-assistant
+    data-nyxid="https://nyx-assistant-sdk-chronoai.apps.nyxid.ai"
+    data-verification-origin="https://nyxid.ai"
+    data-key-source="new">
+    <button slot="prompt" type="button">当前筛选显示几条工单？</button>
+    <button slot="prompt" type="button">把工单切到待处理。</button>
+  </nyx-assistant>
 </body>
 </html>
