@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101018">
+  <meta name="description" content="NyxID Assistant SDK 让网页和原生应用接入用户已授权的 NyxID 服务，并通过宿主工具读取和操作当前界面。">
+  <title>NyxID Assistant SDK · 给应用接上 Nyx 助手</title>
+  <link rel="stylesheet" href="./style.css">
+  <script defer src="./playground.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">跳到主要内容</a>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="./"><span class="mark" aria-hidden="true"><span></span></span><span>NyxID <b>Assistant SDK</b></span></a>
+      <nav aria-label="站点导航">
+        <a href="#playground">演练</a>
+        <a href="#quickstart">快速开始</a>
+        <a class="source-link" href="https://github.com/ChronoAIProject/nyx-assistant-sdk">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero shell" aria-labelledby="intro">
+      <div class="intro">
+        <a class="intro-label" href="https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/tag/v0.1.0-alpha.7"><span class="signal" aria-hidden="true"></span> v0.1.0-alpha.7</a>
+        <h1 id="intro">让助手理解页面，<br><em>也能操作页面。</em></h1>
+        <p>将用户已授权的 NyxID 服务接入你的应用。用类型化工具把页面状态、可执行操作和真实结果交给同一段对话。</p>
+        <div class="hero-actions">
+          <a class="primary" href="#quickstart">快速开始 <span aria-hidden="true">→</span></a>
+          <a class="secondary" href="#playground">运行演练 <span aria-hidden="true">↘</span></a>
+        </div>
+        <div class="platforms">浏览器挂件 <span aria-hidden="true"></span> TypeScript <span aria-hidden="true"></span> 原生应用</div>
+      </div>
+
+      <section class="playground" id="playground" aria-labelledby="demo-title">
+        <div class="demo-top">
+          <div class="demo-title-group">
+            <span class="demo-icon" aria-hidden="true">▤</span>
+            <div>
+              <h2 id="demo-title">工单演练</h2>
+              <p>免登录 · 固定指令 · 真实 SDK</p>
+            </div>
+          </div>
+          <label class="toggle"><input id="readonly" type="checkbox"><span class="switch" aria-hidden="true"></span>只读模式</label>
+        </div>
+
+        <div class="tickets">
+          <table>
+            <caption>
+              <label class="filter">状态
+                <select id="filter">
+                  <option value="all">全部</option>
+                  <option value="open">待处理</option>
+                  <option value="closed">已关闭</option>
+                </select>
+              </label>
+              <span id="count" aria-live="polite"></span>
+            </caption>
+            <thead><tr><th scope="col">工单</th><th scope="col">状态</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <div class="demo-console">
+          <div class="console-heading"><h3>试一条指令</h3><span id="result-state">等待指令</span></div>
+          <div class="prompts">
+            <button type="button" data-prompt="read" disabled>读取筛选</button>
+            <button type="button" data-prompt="open" disabled>切到待处理</button>
+            <button type="button" data-prompt="closed" disabled>切到已关闭</button>
+          </div>
+          <div class="console-output" aria-live="polite">
+            <p id="result-summary">打开只读模式，再试一次切换筛选。</p>
+            <p id="tool-result"></p>
+          </div>
+          <noscript><p>启用 JavaScript 后可以运行工单演练。</p></noscript>
+        </div>
+      </section>
+    </section>
+
+    <section class="section shell" id="quickstart" aria-labelledby="start-title">
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">快速开始</p>
+          <h2 id="start-title">选择接入方式</h2>
+        </div>
+        <a class="text-link" href="https://github.com/ChronoAIProject/nyx-assistant-sdk#readme">完整文档 <span aria-hidden="true">↗</span></a>
+      </div>
+      <div class="cards">
+        <article class="card">
+          <div class="card-icon" aria-hidden="true">&lt;/&gt;</div>
+          <h3>给网页加一个挂件</h3>
+          <p>在 HTML 中引入固定版本的脚本。把 <code>data-nyxid</code> 改为你的 SDK 转发服务，并在服务中登记站点来源。</p>
+          <div class="code-card">
+            <div class="code-top"><span>HTML</span><button type="button" data-copy="install-widget" aria-label="复制 HTML 挂件代码" hidden>复制</button></div>
+            <pre><code id="install-widget">&lt;script defer
+  src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.1.0-alpha.7/browser/nyx-widget.js"
+  data-nyxid="https://sdk.example.com"
+  data-verification-origin="https://nyxid.ai"&gt;&lt;/script&gt;</code></pre>
+          </div>
+          <div class="card-links">
+            <a class="text-link" href="https://github.com/ChronoAIProject/nyx-assistant-sdk/tree/dev/server#readme">转发服务配置 <span aria-hidden="true">↗</span></a>
+            <a class="text-link" href="https://live.trureturing.org/">已接入的直播站 <span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+        <article class="card">
+          <div class="card-icon terminal" aria-hidden="true">&gt;_</div>
+          <h3>接入自己的界面</h3>
+          <p>在自定义网页或原生宿主中使用 <code>AssistantHost</code>。每个窗口和登录身份创建一个实例，并注册该实例的工具。</p>
+          <div class="code-card">
+            <div class="code-top"><span>TERMINAL</span><button type="button" data-copy="install-sdk" aria-label="复制 npm 安装命令" hidden>复制</button></div>
+            <pre><code id="install-sdk">npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0-alpha.7/chronoai-nyx-assistant-sdk-0.1.0-alpha.7.tgz</code></pre>
+          </div>
+          <div class="card-links">
+            <a class="text-link" href="https://github.com/ChronoAIProject/nyx-assistant-sdk#接入当前页面">TypeScript 接入 <span aria-hidden="true">↗</span></a>
+            <a class="text-link" href="https://github.com/ChronoAIProject/nyx-assistant-sdk/tree/dev/examples/macos">macOS 示例 <span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section flow shell" aria-labelledby="flow-title">
+      <h2 id="flow-title">权限和工具在哪里执行？</h2>
+      <dl class="flow-grid">
+        <div><dt>NyxID 授权</dt><dd>用户批准服务访问。接入应用按授予的范围请求服务。</dd></div>
+        <div><dt>宿主执行</dt><dd>SDK 校验工具参数，页面或窗口读取实时状态，并在执行时决定是否允许写入。</dd></div>
+        <div><dt>对话接收结果</dt><dd>服务适配器将工具成功、拒绝或失败的实际结果送回原会话。</dd></div>
+      </dl>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-inner">
+      <a class="brand" href="./"><span class="mark" aria-hidden="true"><span></span></span><span>NyxID <b>Assistant SDK</b></span></a>
+      <nav aria-label="项目链接">
+        <a href="https://github.com/ChronoAIProject/nyx-assistant-sdk/releases">发布版本 ↗</a>
+        <a href="https://github.com/ChronoAIProject/nyx-assistant-sdk/issues">反馈问题 ↗</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

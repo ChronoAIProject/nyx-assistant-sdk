@@ -23,6 +23,7 @@
   ],
   "scripts": {
     "build": "tsc && node scripts/build-widget.mjs",
+    "build:site": "node scripts/build-site.mjs",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "prepare": "npm run build",
     "example:web": "npm run build && node examples/web/serve.mjs",

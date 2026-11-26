@@ -28,6 +28,12 @@ mise run harness-setup
 
 chrono-pr 的仓库和目标分支来自 origin。平台提供的事件或 Git 远端 HEAD 决定默认分支。PR 查询的必需检查与时限可在 `.chrono-harness/pr-policy.json` 配置。
 
+### SDK 官网
+
+官网使用 GitHub Pages 的 GitHub Actions 发布源和 `github-pages` 环境。相关 PR 构建站点，`dev` 上影响站点的推送发布同一构建产物。需要手动重跑时，从 `dev` 运行 SDK website 工作流。
+
+本机在仓库根目录使用 Node.js 22.18 或以上版本运行 `npm ci` 和 `npm run build:site`。成功时 `site/dist` 包含 HTML、CSS 和浏览器脚本，构建失败以非零状态退出。用静态服务器打开该目录后，可检查演练读取当前筛选、更新筛选与行数、只读时拒绝变更。固定指令由本地适配器执行，真实模型的使用入口链接到已接入的直播站。[官网](https://chronoaiproject.github.io/nyx-assistant-sdk/) · [发布工作流](../.github/workflows/pages.yml)
+
 新建 GitHub Issue 即可使用随仓路线图。默认的 Issue 和里程碑工作流跟随本仓默认分支；登记 `.chrono-harness/release.json` 的 `version` 后，路线图可按该版本归集事项。
 
 本地检查使用 runner 保管原件的仓库，可在首次 setup 并提交宿主配置后，从仓库根目录运行以下命令。选装后再次运行 `mise run harness-setup`，将生成的宿主保留策略提交到仓库。

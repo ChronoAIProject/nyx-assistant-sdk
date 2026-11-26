@@ -1,0 +1,57 @@
+name: SDK website
+on:
+  pull_request:
+    paths: &site_inputs
+      - .github/workflows/pages.yml
+      - site/**
+      - examples/web/tickets.js
+      - scripts/build-site.mjs
+      - scripts/build-widget.mjs
+      - src/**
+      - package.json
+      - package-lock.json
+      - tsconfig.json
+  push:
+    branches: [dev]
+    paths: *site_inputs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-website-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build SDK website
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.18.0'
+      - run: npm ci
+      - run: npm run build:site
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        if: github.ref == 'refs/heads/dev' && github.event_name != 'pull_request'
+        with:
+          path: site/dist
+
+  deploy:
+    name: Deploy SDK website
+    if: github.ref == 'refs/heads/dev' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        id: deployment

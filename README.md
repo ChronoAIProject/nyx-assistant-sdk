@@ -4,6 +4,8 @@
 
 首个适配器使用 Metaverse 已接通的 `llm-nyx` 服务与 `nyxagent/chat` 模型。Nyx 聊天和 CMA 都是 NyxID 服务，各自使用独立授权与会话。首版联调 Nyx 聊天。[项目目标与验收条件](https://github.com/ChronoAIProject/nyx-assistant-sdk/issues/1)
 
+在 SDK 官网可以运行免登录工单演练。固定指令通过真实的 `AssistantHost` 读取或更新工单表，也能验证只读模式如何拒绝写入。[SDK 官网](https://chronoaiproject.github.io/nyx-assistant-sdk/)
+
 ## 给静态网页添加聊天挂件
 
 在 HTML 加入一行脚本，页面会出现「Nyx 助手」按钮。脚本也随 npm 包提供，可复制 `browser/nyx-widget.js` 到自己的静态站点。
