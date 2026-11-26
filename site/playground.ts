@@ -9,12 +9,6 @@ const prompts = {
 
 const labels = { all: "全部", open: "待处理", closed: "已关闭" } as const;
 const tickets = mountTickets();
-const login = document.querySelector<HTMLButtonElement>("#agent-login")!;
-void customElements.whenDefined("nyx-assistant").then(() => {
-  const widget = document.querySelector<HTMLElement & { openAgentIdentity(): Promise<void> }>("nyx-assistant")!;
-  login.addEventListener("click", () => void widget.openAgentIdentity());
-  login.disabled = false;
-});
 document.querySelector("nyx-assistant")!.addEventListener("nyx-ready", (event) => {
   const { host, z: widgetZ } = (event as CustomEvent<{ host: AssistantHost; z: typeof z }>).detail;
   tickets.registerTools(host, widgetZ);
