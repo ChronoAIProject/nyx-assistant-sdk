@@ -1,7 +1,7 @@
 import type { NyxIDConnection } from "./connection.ts";
 import type { AgentIdentity } from "./agent-identity.ts";
 import { LocalizedError, type MessageKey } from "./i18n.ts";
-import { VoiceClient, type VoiceAgent, type VoiceOption, type VoiceOptions } from "./voice.ts";
+import { VoiceClient, VoiceConnectionUnavailable, type VoiceAgent, type VoiceOption, type VoiceOptions } from "./voice.ts";
 import { WidgetCall } from "./widget-call.ts";
 
 type Service = AgentIdentity["services"][number];
@@ -10,8 +10,7 @@ export class WidgetVoice {
   #call?: WidgetCall;
   #load?: AbortController;
   #connection?: NyxIDConnection;
-  #identity?: AgentIdentity;
-  #services: Service[] = [];
+  #bots: { service: Service; agent: VoiceAgent }[] = [];
   #agent?: VoiceAgent;
   #choices?: VoiceOptions;
   #status?: MessageKey;
@@ -45,6 +44,9 @@ export class WidgetVoice {
         <label hidden><span data-label="voiceBot"></span><select class="voice-bot"></select></label>
         <label hidden><span data-label="voiceProvider"></span><select class="voice-provider"></select></label>
       </details>
+      <div class="voice-repair" hidden>
+        <button type="button" class="voice-retry" data-label="refreshBots"></button>
+      </div>
       <div class="voice-actions">
         <button type="button" class="voice-start" data-label="voiceStart" hidden></button>
         <button type="button" class="voice-mute" hidden></button>
@@ -61,6 +63,7 @@ export class WidgetVoice {
       void this.#discover();
     };
     this.#el(".voice-back").onclick = () => { void this.reset(); toggle.focus(); };
+    this.#el(".voice-retry").onclick = () => void this.#discover();
     this.#el(".voice-mute").onclick = async () => {
       const call = this.#call;
       if (!call) return;
@@ -84,10 +87,9 @@ export class WidgetVoice {
   }
   #el<T extends HTMLElement = HTMLElement>(selector: string) { return this.#root.querySelector<T>(selector)!; }
   #select(selector: string) { return this.#el<HTMLSelectElement>(selector); }
-  setConnection(connection?: NyxIDConnection, identity?: AgentIdentity) {
+  setConnection(connection?: NyxIDConnection) {
     const ended = this.reset();
     this.#connection = connection;
-    this.#identity = identity;
     return ended;
   }
   reset() {
@@ -126,32 +128,49 @@ export class WidgetVoice {
   }
   async #discover() {
     const signal = this.#loading();
+    this.#el(".voice-repair").hidden = this.#el(".voice-settings").hidden = true;
+    this.#bots = [];
     try {
       if (!this.#connection!.hasAgentKey) throw new LocalizedError("voiceProxy");
-      const identity = this.#identity ?? await this.#connection!.getAgentIdentity(signal);
+      const connection = this.#connection!;
+      const identity = await connection.getAgentIdentity(signal);
+      const services = identity.services.filter(s => s.active && (s.catalogSlug ?? s.slug) === "nyxbot-voice");
+      const bots = [];
+      for (const service of services) {
+        signal.throwIfAborted();
+        try {
+          const agent = await new VoiceClient(connection, service).getAgent(signal);
+          bots.push({ service, agent });
+        } catch (error) {
+          if (!(error instanceof VoiceConnectionUnavailable)) throw error;
+        }
+      }
       signal.throwIfAborted();
-      this.#services = identity.services.filter(s => s.active && (s.catalogSlug ?? s.slug) === "nyxbot-voice");
-      if (!this.#services.length) throw new LocalizedError("voiceNoBot");
+      this.#bots = bots;
+      if (!bots.length) {
+        this.#el(".voice-repair").hidden = false;
+        throw new LocalizedError(services.length ? "voiceNeedsBinding" : "voiceNoBot");
+      }
       const bot = this.#select(".voice-bot");
-      bot.replaceChildren(...this.#services.map(s => new Option(s.label, s.id)));
-      if (this.#services.length > 1) {
+      bot.replaceChildren(...bots.map(({ service, agent }) => new Option(agent.display_name || agent.name || service.label, service.id)));
+      if (bots.length > 1) {
         bot.prepend(new Option(this.#text("chooseBot"), ""));
         bot.value = "";
       }
-      bot.parentElement!.hidden = this.#services.length === 1;
+      bot.parentElement!.hidden = this.#bots.length === 1;
       this.#el(".voice-settings").hidden = false;
-      this.#el<HTMLDetailsElement>(".voice-settings").open = this.#services.length > 1;
+      this.#el<HTMLDetailsElement>(".voice-settings").open = this.#bots.length > 1;
       await this.#options();
     } catch (error) { if (!signal.aborted) this.#error(error); }
   }
-  #service() { return this.#services.find(s => s.id === this.#select(".voice-bot").value); }
+  #selectedBot() { return this.#bots.find(b => b.service.id === this.#select(".voice-bot").value); }
   async #options() {
     const signal = this.#loading();
-    const service = this.#service();
-    if (!service) { this.#setStatus("chooseBot"); return; }
+    const bot = this.#selectedBot();
+    if (!bot) { this.#setStatus("chooseBot"); return; }
     try {
+      const { service, agent } = bot;
       const client = new VoiceClient(this.#connection!, service);
-      const agent = await client.getAgent(signal);
       const choices = await client.getOptions(agent.conversation_id, signal);
       signal.throwIfAborted();
       this.#agent = agent;
@@ -174,7 +193,7 @@ export class WidgetVoice {
       this.#ready();
       const needsChoice = preferred < 0 || (!saved && options.filter(o => !o.disabled).length > 1);
       this.#el<HTMLDetailsElement>(".voice-settings").open = needsChoice;
-      if (this.#services.length === 1 && !needsChoice && this.#option()) await this.#start();
+      if (this.#bots.length === 1 && !needsChoice && this.#option()) await this.#start();
     } catch (error) { if (!signal.aborted) this.#error(error); }
   }
   #option(): VoiceOption | undefined {
@@ -188,7 +207,7 @@ export class WidgetVoice {
     this.#setStatus(ready ? "voiceReady" : "voiceNoProvider");
   }
   async #start() {
-    const option = this.#option(), service = this.#service();
+    const option = this.#option(), service = this.#selectedBot()?.service;
     if (!option || !service || !this.#agent || this.#call || this.#ending) return;
     this.#captions.clear();
     this.#startedAt = 0;

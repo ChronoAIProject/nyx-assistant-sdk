@@ -114,6 +114,9 @@ async function parseResponse<T>(response: Response, schema: z.ZodType<T>, label:
   return schema.parse(await response.json());
 }
 
+/** NyxID recognizes the catalog grant but cannot resolve this concrete Bot connection. */
+export class VoiceConnectionUnavailable extends Error {}
+
 /** Discover and verify the Bot fixed by one exact Voice UserService. */
 export async function discoverVoiceAgent(
   connection: NyxIDConnection,
@@ -123,6 +126,14 @@ export async function discoverVoiceAgent(
   const response = await connection.requestService(service, ["voice", "agents"], {
     signal, cache: "no-store",
   });
+  if (response.status === 403) {
+    const body = await response.json().catch(() => null);
+    if (body?.error === "api_key_scope_forbidden" &&
+        body.message === "API key scope forbidden: Voice connection is unavailable") {
+      throw new VoiceConnectionUnavailable("NyxID cannot resolve a published Bot for this voice connection");
+    }
+    throw new Error("NyxID Voice discovery returned HTTP 403");
+  }
   const payload = await parseResponse(response, z.object({ agents: z.array(voiceAgentSchema) }), "NyxID Voice discovery");
   if (payload.agents.length !== 1 || payload.agents[0].service_id !== service.id) {
     throw new Error("NyxID Voice discovery did not return the exact authorized Bot connection");

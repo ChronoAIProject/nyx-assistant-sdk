@@ -1,5 +1,7 @@
 export const messages = {
   zh: {
+    voiceNeedsBinding: "已获语音授权，NyxID 尚未提供可通话的 Bot。",
+    refreshBots: "刷新 Bot 列表",
     voiceReady: "准备通话",
     backToChat: "返回文字聊天",
     voiceSettings: "通话设置",
@@ -97,6 +99,8 @@ export const messages = {
     saveGrantFailed: "浏览器无法保存此授权，请检查站点存储设置。",
   },
   en: {
+    voiceNeedsBinding: "Voice access is granted. NyxID has not provided a callable Bot for this key.",
+    refreshBots: "Refresh Bots",
     voiceReady: "Ready to call",
     backToChat: "Back to chat",
     voiceSettings: "Call settings",

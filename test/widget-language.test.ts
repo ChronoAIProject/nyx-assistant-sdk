@@ -137,3 +137,44 @@ for (const voiceEnabled of [true, false]) {
     }
   });
 }
+
+test("a catalog-only voice grant can refresh the same key and select a newly published Bot", async t => {
+  const { WidgetVoice } = await import("../src/widget-voice.ts");
+  const { NyxIDConnection } = await import("../src/connection.ts");
+  t.mock.method(globalThis, "fetch", fetchResponse);
+  const savedOption = Object.getOwnPropertyDescriptor(globalThis, "Option");
+  Object.defineProperty(globalThis, "Option", { configurable: true, value: dom.window.Option });
+  t.after(() => savedOption ? Object.defineProperty(globalThis, "Option", savedOption) : Reflect.deleteProperty(globalThis, "Option"));
+  const generic = "035140d4-3b95-4515-a1b6-1eaef20cf266";
+  const published = "adba29b6-9e56-4b88-a5ea-69fb4dc0eb60";
+  const row = (id: string) => ({ id, slug: "nyxbot-voice", label: "NyxBot Voice", is_active: true });
+  let identities = 0;
+  async function fetchResponse(input: URL) {
+    if (input.pathname.endsWith("/self")) {
+      const ids = ++identities === 1 ? [generic] : [generic, published];
+      return Response.json({ credential_id: "child", api_key: {
+        id: "key", owner_id: "owner", scopes: "proxy", allow_all_services: false, allow_auto_connected_services: false,
+        allow_all_nodes: false, allowed_node_ids: [], allowed_service_ids: ids, effective_services: ids.map(row),
+      } });
+    }
+    if (input.pathname.includes(generic)) return Response.json({ error: "api_key_scope_forbidden",
+      message: "API key scope forbidden: Voice connection is unavailable" }, { status: 403 });
+    if (input.pathname.endsWith("/agents")) return Response.json({ agents: [
+      { service_id: published, agent_id: published, name: "My Bot", conversation_id: "thread" },
+    ] });
+    return Response.json({ options: [] });
+  }
+  const root = document.createElement("div"), toggle = document.createElement("button");
+  const voice = new WidgetVoice(root, toggle, document.createElement("div"), key => key, () => {});
+  voice.setConnection(NyxIDConnection.fromAgentKey("https://relay.example", "child"));
+  toggle.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(root.querySelector(".voice-status")!.textContent, "voiceNeedsBinding");
+  root.querySelector<HTMLButtonElement>(".voice-retry")!.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(root.querySelector(".voice-name")!.textContent, "My Bot");
+  assert.equal(root.querySelectorAll(".voice-bot option").length, 1);
+  assert.equal(root.querySelector<HTMLElement>(".voice-repair")!.hidden, true);
+  assert.equal(identities, 2);
+  await voice.reset();
+});
