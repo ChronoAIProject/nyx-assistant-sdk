@@ -1,4 +1,7 @@
-import { agentIdentity, agentKeyResponse, type AgentIdentity } from "./agent-identity.ts";
+import { agentIdentity, agentKeyResponse, serviceConnection, serviceListResponse, type AgentIdentity } from "./agent-identity.ts";
+
+export const NYXBOT_VOICE_SERVICE = "nyxbot-voice";
+type Service = AgentIdentity["services"][number];
 
 /** NyxID's service proxy. The host supplies a fetch bound to its current credential. */
 export class NyxIDConnection {
@@ -34,7 +37,7 @@ export class NyxIDConnection {
 
   /** Read the live Agent Key identity and its exact authorized service connections. */
   async getAgentIdentity(signal?: AbortSignal) {
-    const response = await this.#request("api/v1/auth/agent-key/self", [], {
+    const response = await this.#request(this.#url("api/v1/auth/agent-key/self", []), {
       cache: "no-store", credentials: "omit", signal,
     });
     if (!response.ok) throw new Error("NyxID Agent Key lookup failed (HTTP " + response.status + ")");
@@ -43,53 +46,65 @@ export class NyxIDConnection {
     return agentIdentity(result.data);
   }
 
+  /** List the connections visible to an ordinary Agent Key or a login child with read scope. */
+  async getServiceConnections(signal?: AbortSignal) {
+    const response = await this.#request(this.#url("api/v1/keys", []), {
+      cache: "no-store", credentials: "omit", signal,
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`NyxID service discovery returned HTTP ${response.status}`);
+    }
+    return serviceListResponse.parse(await response.json()).keys.map(serviceConnection);
+  }
+
   /** Paths are supplied as decoded segments. The caller selects an authorized service. */
   request(service: string, path: readonly string[], init: RequestInit = {}, query?: URLSearchParams) {
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(service) || !path.length ||
-        path.some(part => !part || part === "." || part === ".." || /[/\\%?#]/.test(part))) {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(service) || !path.length) {
       throw new Error("Invalid NyxID service or endpoint");
     }
-    return this.#request("api/v1/proxy/s/" + service, path, init, query);
+    return this.#request(this.#url("api/v1/proxy/s/" + service, path, query), init);
   }
 
   /** Select one concrete UserService when a catalog slug has multiple connections. */
-  requestService(service: AgentIdentity["services"][number], path: readonly string[], init: RequestInit = {}, query?: URLSearchParams) {
+  requestService(service: Service, path: readonly string[], init: RequestInit = {}, query?: URLSearchParams) {
+    return this.#request(this.#serviceUrl(service, path, query), init);
+  }
+
+  #serviceUrl(service: Service, path: readonly string[], query?: URLSearchParams) {
     const slug = service.catalogSlug ?? service.slug;
     if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(service.id)) {
       throw new Error("Expected a NyxID service connection UUID");
     }
     if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) throw new Error("Invalid NyxID service slug");
     const params = new URLSearchParams(query);
+    if (slug === NYXBOT_VOICE_SERVICE) {
+      params.delete("_nyxid_via");
+      return this.#url(`api/v1/proxy/${slug}/${service.id}`, path, params);
+    }
     params.set("_nyxid_via", service.id);
-    return this.#request("api/v1/proxy/s/" + slug, path, init, params);
+    return this.#url("api/v1/proxy/s/" + slug, path, params);
   }
 
   /** Open a credential-bound WebSocket in runtimes that support custom headers. */
-  openWebSocket<T>(service: AgentIdentity["services"][number], path: readonly string[], factory: (url: URL, credential: string) => T) {
+  openWebSocket<T>(service: Service, path: readonly string[], factory: (url: URL, credential: string) => T) {
     if (!this.#credential) throw new Error("This connection has no Agent Key WebSocket credential");
-    const slug = service.catalogSlug ?? service.slug;
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(slug) ||
-        !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(service.id)) {
-      throw new Error("Invalid NyxID service connection");
-    }
-    if (path.some(part => !part || part === "." || part === ".." || /[/\\%?#]/.test(part))) {
-      throw new Error("Invalid NyxID service or endpoint");
-    }
-    const url = new URL(this.#base);
+    const url = this.#serviceUrl(service, path);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    url.pathname = [url.pathname.replace(/\/$/, ""), "api/v1/proxy/s", slug,
-      ...path.map(encodeURIComponent)].join("/");
-    url.search = new URLSearchParams({ _nyxid_via: service.id }).toString();
     return factory(url, this.#credential);
   }
 
-  #request(route: string, path: readonly string[], init: RequestInit, query?: URLSearchParams) {
+  #url(route: string, path: readonly string[], query?: URLSearchParams) {
     if (path.some(part => !part || part === "." || part === ".." || /[/\\%?#]/.test(part))) {
       throw new Error("Invalid NyxID service or endpoint");
     }
     const url = new URL(this.#base);
     url.pathname = [url.pathname.replace(/\/$/, ""), route, ...path.map(encodeURIComponent)].join("/");
     url.search = query?.toString() ?? "";
+    return url;
+  }
+
+  #request(url: URL, init: RequestInit) {
     const request = this.#fetch;
     return request(url, { ...init, redirect: "error" });
   }

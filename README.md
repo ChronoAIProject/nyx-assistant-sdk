@@ -20,47 +20,53 @@ SDK 官网的「Nyx 助手」可连接 NyxID，用自然语言查询或切换工
 
 ## 用 Agent Key 连接 Bot Voice
 
-NyxID 的 Bot Voice 是独立的 `nyxbot-voice` 服务连接。Bot 所有者先在 NyxID 的 Agent 详情中发布 Device voice，再把这条具体连接授予设备 Key。客户端读取 Key 身份，选择精确的 `service_id`，并核验 `/voice/agents` 返回的 Bot 与服务 ID 相同。
+Bot 所有者在 NyxID 的 Agent 详情中发布 Device voice，再把该连接授予设备 Key。使用带有 `read proxy` 权限的普通 Agent Key 或设备登录子凭据。以下示例在支持自定义 WebSocket 请求头的宿主中运行。
 
 ```ts
 import { NyxIDConnection } from "@chronoai/nyx-assistant-sdk";
-import {
-  VoiceClient,
-  discoverVoiceAgent,
-  selectVoiceService,
-} from "@chronoai/nyx-assistant-sdk/voice";
+import { VoiceClient, selectVoiceService } from "@chronoai/nyx-assistant-sdk/voice";
 
-const connection = NyxIDConnection.fromAgentKey(nyxidBaseUrl, childCredential);
-const identity = await connection.getAgentIdentity();
-const service = selectVoiceService(identity, selectedServiceId);
-const agent = await discoverVoiceAgent(connection, service);
+const connection = NyxIDConnection.fromAgentKey(nyxidBaseUrl, credential);
+const services = await connection.getServiceConnections();
+const service = selectVoiceService({ services }, selectedServiceId);
 const voice = new VoiceClient(connection, service, {
-  // nyx-panel supplies a WebSocket implementation that sends this header.
-  socket: (url, credential) => createWebSocket(url, {
-    headers: { Authorization: `Bearer ${credential}` },
+  socket: (url, key) => createWebSocket(url, {
+    headers: { Authorization: `Bearer ${key}` },
   }),
+  onSnapshot: updateCallState,
+  onError: showCallError,
+  // xAI 回放队列接收 PCM 和该帧的播放终点（毫秒）。
+  onAudio: (pcm, endMs) => player.enqueue(pcm, endMs),
+  onAudioFlush: () => player.flush(),
 });
-const options = await voice.getOptions(agent.conversation_id);
-const option = options.options.find(item => item.available);
-if (!option) throw new Error("No available Voice provider");
-
-// Create a WebRTC offer from the microphone stream, then apply sdp_answer
-// to the peer connection returned by the host's WebRTC implementation.
-const started = await voice.start({
-  agentId: agent.agent_id,
-  preferences: {
-    service_id: option.service_id,
-    connection_id: option.connection_id,
-    key_source: option.key_source,
-    model: option.model,
-    input_mode: "automatic",
-  },
-  sdpOffer,
-});
-await peer.setRemoteDescription({ type: "answer", sdp: started.sdp_answer });
+const agent = await voice.getAgent();
+const { options } = await voice.getOptions(agent.conversation_id);
 ```
 
-`VoiceClient` 还提供 `heartbeat(playbackMs, playbackAudible)`、`control("mute" | "unmute" | "end")` 和 `announce({text})` 或 `announce({greeting: true})`。`openWebSocket` 只把 Agent Key 子凭据交给宿主提供的 WebSocket 工厂，控制流需要该工厂支持自定义 Authorization 头。SDK 将提供商凭据留在 NyxID，并把每个 HTTP 和 WebSocket 操作路由到已核验的 `nyxbot-voice/{service_id}` 连接。
+`service.id` 选定本次呼叫的 Bot。传给 `voice.start()` 的 `preferences.service_id` 取自所选提供商选项。SDK 会把两种 ID 放在各自的位置。
+
+**OpenAI Live（WebRTC）**。宿主把麦克风轨道加到 `RTCPeerConnection`，通过 `ontrack` 把远端音轨接入扬声器。设置本地描述并等 ICE 候选收集完毕，再发送完整的 SDP。
+
+```ts
+const option = options.find(o => o.available && o.voice?.protocol === "openai_live");
+if (!option) throw new Error("No available OpenAI Live option");
+peer.createDataChannel("oai-events");
+await peer.setLocalDescription(await peer.createOffer());
+await waitForIceGatheringComplete(peer); // 宿主等待 iceGatheringState 为 complete
+const call = await voice.start({
+  agentId: agent.agent_id,
+  preferences: {
+    service_id: option.service_id, connection_id: option.connection_id,
+    key_source: option.key_source, model: option.model, input_mode: "automatic",
+  },
+  sdpOffer: peer.localDescription!.sdp,
+});
+await peer.setRemoteDescription({ type: "answer", sdp: call.sdp_answer });
+```
+
+**xAI Realtime（WebSocket PCM）**。选择 `voice.protocol === "xai_realtime"` 的可用选项，调用同一个 `start()`，传入 `sdpOffer: ""` 和 `input_mode: "push_to_talk"`。收到 `active` 快照后，按下说话键时调用 `voice.beginInput()`，返回 `true` 即可发送采集到的音频。逐帧调用 `voice.sendPcm(arrayBuffer)`，松开时调用 `voice.commitInput()`。输入和回放均为 24 kHz、单声道、小端 PCM16。建议每帧 20 毫秒（960 字节），上限为 40 毫秒。
+
+两种通话都由宿主每秒调用一次 `voice.heartbeat(playedMs, audible)`。传入实际已播放到的毫秒位置和扬声器是否正在出声。挂断时先调用 `await voice.control("end")`，再释放心跳定时器、音轨、播放器和 peer。静音与恢复使用 `control("mute")` 和 `control("unmute")`。支持播报的选项还可以使用 `announce({ text })` 或 `announce({ greeting: true })`。
 
 应用已有聊天面板时，从 `@chronoai/nyx-assistant-sdk/widget` 导入 `NyxAssistantElement`，使用 `customElements.define("nyx-assistant", NyxAssistantElement)` 注册一次。创建元素后先设置 `layout="embedded"`、连接参数、`context` 回调及可选的 `instructions`，再挂载。模块导入不会在页面上添加悬浮入口。宿主用 `nyx-ready` 注册页面工具；`nyx-state` 可读取元素的 `busy` 和 `host`，`nyx-answer` 提供本轮已确认的答复。通过 `sendMessage(text)` 可以提交用户明确选择的操作。
 

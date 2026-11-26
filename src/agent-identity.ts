@@ -11,6 +11,20 @@ const service = z.object({
   credential_missing: z.boolean().optional(),
 });
 
+export const serviceListResponse = z.object({ keys: z.array(service) });
+
+export function serviceConnection(row: z.infer<typeof service>) {
+  return {
+    id: row.id,
+    slug: row.slug,
+    catalogSlug: row.catalog_service_slug ?? null,
+    label: row.label ?? row.slug,
+    active: row.is_active,
+    status: row.status,
+    credentialMissing: row.credential_missing,
+  };
+}
+
 /** The identity and effective service connections returned by NyxID Agent Key auth. */
 export const agentKeyResponse = z.object({
   credential_id: id,
@@ -44,15 +58,7 @@ export function agentIdentity(response: z.infer<typeof agentKeyResponse>) {
     scopes: key.scopes.split(/\s+/).filter(Boolean),
     allowAllServices: key.allow_all_services,
     allowAutoConnectedServices: key.allow_auto_connected_services,
-    services: key.effective_services.map(row => ({
-      id: row.id,
-      slug: row.slug,
-      catalogSlug: row.catalog_service_slug ?? null,
-      label: row.label ?? row.slug,
-      active: row.is_active,
-      status: row.status,
-      credentialMissing: row.credential_missing,
-    })),
+    services: key.effective_services.map(serviceConnection),
   };
 }
 
