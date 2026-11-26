@@ -15,6 +15,8 @@ const challenge = z.object({
 const enrollment = challenge.extend({
   expiresAt: z.number().finite(), nextPollAt: z.number().finite(),
 });
+const officialRelay = "https://nyx-assistant-sdk-chronoai.apps.nyxid.ai";
+
 export interface PreviousGrant {
   credential: string;
   /** Remove this exact old record after encrypted storage and live verification. */
@@ -23,8 +25,8 @@ export interface PreviousGrant {
 export interface BrowserAuthorizationOptions {
   language?: string;
   previousGrant?: () => PreviousGrant | undefined;
-  base: string | URL;
-  verificationOrigin: string;
+  base?: string | URL;
+  verificationOrigin?: string;
   /** Explicit service slugs for a restricted grant, or the grants on the key approved at NyxID. */
   services: readonly string[] | "@key";
   keySource?: "existing" | "new";
@@ -89,10 +91,10 @@ export class BrowserAuthorization {
   }
 
   constructor(options: BrowserAuthorizationOptions) {
-    this.#base = new URL(options.base);
+    this.#base = new URL(options.base ?? officialRelay);
     new NyxIDConnection(this.#base);
     this.#base.pathname = this.#base.pathname.replace(/\/?$/, "/");
-    const verification = new URL(options.verificationOrigin);
+    const verification = new URL(options.verificationOrigin ?? (this.#base.origin === officialRelay ? "https://nyxid.ai" : this.#base.origin));
     new NyxIDConnection(verification);
     this.#origin = verification.origin;
     this.#services = options.services === "@key" ? "@key" : [...new Set(z.array(serviceSlug).min(1).parse(options.services))].sort();

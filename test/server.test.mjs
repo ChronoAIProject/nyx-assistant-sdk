@@ -102,3 +102,48 @@ for (const event of ["deadline", "browser disconnect"]) {
     }
   });
 }
+
+test("browser voice uses a fixed upstream and authenticates the stream with the delivered child", { timeout: 8000 }, async t => {
+  const { createRequire } = await import("node:module");
+  const require = createRequire(new URL("../server/package.json", import.meta.url));
+  const { WebSocket, WebSocketServer } = require("ws");
+  const { createServer } = await import("node:http");
+  const origin = "https://widget.example";
+  const service = "22caf9db-4c7d-4712-89e8-09c96c58489b";
+  const session = "c681b53d-dbb6-4d84-82d5-96a30df3de47";
+  const path = "/api/v1/proxy/nyxbot-voice/" + service + "/voice/";
+  const remote = createServer((req, res) => {
+    if (req.headers.authorization !== "Bearer child") res.writeHead(401);
+    res.end("{}");
+  }).listen(0, "127.0.0.1");
+  await once(remote, "listening");
+  const sockets = new WebSocketServer({ server: remote });
+  sockets.on("connection", (ws, req) => {
+    assert.equal(req.headers.authorization, "Bearer child");
+    assert.equal(req.headers.cookie, undefined);
+    assert.equal(req.url, path + "sessions/" + session + "/stream");
+    ws.send('{"type":"snapshot"}');
+    ws.on("message", (data, binary) => ws.send(data, { binary }));
+  });
+  const relay = sdkServer({ upstreamOrigin: "http://127.0.0.1:" + remote.address().port, origins: [origin] }).listen(0, "127.0.0.1");
+  await once(relay, "listening");
+  const base = "http://127.0.0.1:" + relay.address().port;
+  const headers = { origin, authorization: "Bearer child" };
+  t.after(() => { for (const ws of sockets.clients) ws.terminate(); sockets.close(); remote.close(); relay.close(); });
+  assert.equal((await fetch(base + path + "options?conversation_id=one", { headers })).status, 200);
+  assert.equal((await fetch(base + path + "sessions", { headers })).status, 405);
+  assert.equal((await fetch(base + path + "agents", { headers: { ...headers, authorization: "Bearer parent" } })).status, 401);
+  const url = base.replace("http:", "ws:") + path + "sessions/" + session + "/stream";
+  const ws = new WebSocket(url, { origin });
+  await once(ws, "open");
+  const ready = once(ws, "message");
+  ws.send(JSON.stringify({ type: "authenticate", credential: "child" }));
+  assert.equal((await ready)[0].toString(), '{"type":"snapshot"}');
+  const reply = once(ws, "message");
+  ws.send(Buffer.from([33, 12, 0, 42]));
+  const [bytes, binary] = await reply;
+  assert.equal(binary, true);
+  assert.deepEqual(bytes, Buffer.from([33, 12, 0, 42]));
+  ws.close();
+  await once(ws, "close");
+});

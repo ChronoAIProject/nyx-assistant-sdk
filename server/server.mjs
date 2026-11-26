@@ -4,6 +4,8 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
 
+import { attachVoiceStreams, voiceMethods } from "./voice.mjs";
+
 const auth = "/api/v1/auth/agent-key/";
 const responses = "/api/v1/proxy/s/llm-nyx/v1/responses";
 const allowedHeaders = ["accept", "authorization", "content-type", "idempotency-key"];
@@ -12,7 +14,7 @@ function methods(path) {
   if (path === auth + "request" || path === auth + "poll" || path === responses) return ["POST"];
   if (path === auth + "self") return ["GET", "DELETE"];
   if (path.startsWith(responses + "/") && /^[A-Za-z0-9_-]{1,256}$/.test(path.slice(responses.length + 1))) return ["GET"];
-  return [];
+  return voiceMethods(path);
 }
 
 function fail(res, status, error) {
@@ -81,7 +83,7 @@ function exactOrigin(input) {
 export function sdkServer({ upstreamOrigin, origins, request = fetch }) {
   const upstream = exactOrigin(upstreamOrigin);
   const allowed = new Set(origins.map(exactOrigin));
-  return createServer(async (req, res) => {
+  const server = createServer(async (req, res) => {
     const path = req.url;
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -119,7 +121,7 @@ export function sdkServer({ upstreamOrigin, origins, request = fetch }) {
       for (const name of allowedHeaders) {
         if (req.headers[name] !== undefined) headers.set(name, req.headers[name]);
       }
-      if (path.startsWith(responses)) {
+      if (!login && path !== auth + "self") {
         const self = await request(upstream + auth + "self", { ...options, headers: { Authorization: bearer } });
         if (!self.ok) return await send(res, self, options.signal);
         await self.body?.cancel();
@@ -133,6 +135,7 @@ export function sdkServer({ upstreamOrigin, origins, request = fetch }) {
       res.off("close", cancel);
     }
   });
+  return attachVoiceStreams(server, upstream, allowed, request);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

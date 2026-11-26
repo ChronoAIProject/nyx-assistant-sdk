@@ -16,7 +16,15 @@ SDK 官网的「免登录试用」可直接读取或切换演示工单的筛选�
 
 `data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。独立转发服务部署于 chrono-cd，使用 `data-nyxid` 指向服务地址，并设置 `data-verification-origin="https://nyxid.ai"`。部署方通过 `SDK_ORIGINS` 配置接入站点。网页挂件和 `BrowserAuthorization` 默认记住本次登录。同一浏览器再次打开页面或刷新时，挂件会自动核验并恢复。显式设置 `data-storage="memory"`（自建 UI 传 `credentialStorage: null`）可仅在当前页面使用授权。默认模式在缺少 Web Locks、Web Crypto 或无法访问本地存储时使用内存。同源标签页按站点配置依次连接并复用已保存的授权。挂件通过 Web Crypto 的 AES-GCM 加密子凭据，密文保存在站点 localStorage，不可导出的密钥存于该源的 IndexedDB。浏览器恢复时先迁移 alpha.4 的明文记录，再向 NyxID 核验。能在同源运行的脚本仍然可以使用已授权的凭据。断开授权会撤销当前子凭据并通知同源标签页。
 
-`data-services` 用逗号分隔此应用需要的服务，默认是 `llm-nyx,chrono-llm-public`。设置为 `@key` 时，挂件使用用户在 NyxID 授权页选择的 Agent Key 原有服务授权，适合同时接入 Bot Voice 等具体连接。`data-key-source="new"` 在 NyxID 授权页预填创建专用 Key，默认预选已有 Key。批准后的实际权限由挂件按此服务列表核验。未完成的申请保存在当前标签页，刷新后点连接可以继续原申请。自有 UI 可从 `@chronoai/nyx-assistant-sdk/agent-key` 导入 `BrowserAuthorization`，传入 NyxID 的 `base`、登录页 `verificationOrigin`、`services` 和 `clientLabel`；`connect(signal, showLink)` 提供授权链接，`restore(signal)` 恢复并核验已存凭据。返回的 `connection` 可直接创建聊天适配器，`access.services` 和 `access.managementUrl` 分别是已核验的服务列表和当前 Key 的管理地址。
+`data-services` 用逗号分隔此应用的基础服务，默认是 `llm-nyx,chrono-llm-public`。设置为 `@key` 时，挂件使用用户在 NyxID 授权页选择的 Agent Key 原有服务授权，适合同时接入 Bot Voice 等具体连接。`data-key-source="new"` 在 NyxID 授权页预填创建专用 Key，默认预选已有 Key。批准后的实际权限由挂件按此服务列表核验。未完成的申请保存在当前标签页，刷新后点连接可以继续原申请。自有 UI 可从 `@chronoai/nyx-assistant-sdk/agent-key` 导入 `BrowserAuthorization`，传入 NyxID 的 `base`、登录页 `verificationOrigin`、`services` 和 `clientLabel`；`connect(signal, showLink)` 提供授权链接，`restore(signal)` 恢复并核验已存凭据。返回的 `connection` 可直接创建聊天适配器，`access.services` 和 `access.managementUrl` 分别是已核验的服务列表和当前 Key 的管理地址。
+
+### 挂件语音通话
+
+连接后，空输入框右侧显示「语音通话」，输入文字后切换为「发送」。点通话入口后，如果只有一个 Bot 且语音来源已确定，会直接拨号。多个 Bot 或待选择的模型会显示通话设置。双方字幕显示在聊天记录中，通话栏提供静音、计时和挂断。OpenAI Live 支持双向 WebRTC 通话，xAI Realtime 使用「按住说话」。点「挂断」会结束会话并释放麦克风。
+
+挂件默认开启语音。开发者可以在挂件脚本或 `<nyx-assistant>` 上使用 `data-voice="false"` 关闭，或通过 `element.voiceEnabled` 切换。首次连接一次申请 `llm-nyx`、`chrono-llm-public` 和 `nyxbot-voice`。关闭语音时只申请文字服务。宿主可用 `data-services` 覆盖基础服务清单，挂件按开关加入或移除 `nyxbot-voice`。显式配置 `@key` 则沿用所选 Key 的授权。
+
+省略 `data-nyxid` 时使用官方 SDK 转发服务，并在 `https://nyxid.ai` 授权。自建部署用 `data-nyxid` 指定 SDK 转发服务，用 `data-verification-origin` 指定 NyxID 登录站点。浏览器通话需要支持 Voice HTTP 和 WebSocket 的 SDK 转发服务，部署方通过 `NYXID_ORIGIN` 固定上游。使用 `data-proxy` 的宿主可通过 `element.bind(NyxIDConnection.fromAgentKey(relayUrl, childCredential))` 绑定语音连接。
 
 ## 用 Agent Key 连接 Bot Voice
 

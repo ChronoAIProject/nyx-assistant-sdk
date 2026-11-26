@@ -59,3 +59,8 @@
 
 | `src/i18n.ts` | messages.ts、语言偏好与带参数的消息编号 | SDK 宿主、连接、挂件、Markdown、授权和聊天适配器按当前语言读取控件与诊断 | 随挂件打包 |
 | `test/widget-language.test.ts` | jsdom、挂件、模拟授权响应 | 验证页面与浏览器语言选择、回退、保留会话和草稿并更新含 HTTP 状态的错误 | 未知 |
+| `src/widget-voice.ts` | 当前授权、Bot Voice 选项和字幕 | 挂件选择 Bot 和模型，开始或挂断通话 | 仅展开语音时查询 |
+| `src/widget-call.ts` | 麦克风、VoiceClient、WebRTC、Web Audio | 挂件双向音频和播放进度 | 通话时启用设备和心跳 |
+| `server/voice.mjs` | 站点来源、子凭据和固定上游 | 网页语音 HTTP 和 WebSocket 转发 | 通话期间两条 WebSocket |
+| `server/package.json` | ws 的固定版本 | 转发服务安装和镜像构建 | 一个运行时依赖 |
+| `server/package-lock.json` | 包版本和完整性 | 重建转发服务依赖 | 一份锁文件 |

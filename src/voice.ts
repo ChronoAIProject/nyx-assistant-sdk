@@ -177,6 +177,7 @@ export class VoiceClient {
   #starting = false;
   #pcmRelay = false;
   #inputOpen = false;
+  #finishEnd?: () => void;
 
   constructor(connection: NyxIDConnection, service: VoiceService, options: VoiceClientOptions = {}) {
     this.#connection = connection;
@@ -299,7 +300,11 @@ export class VoiceClient {
       }
     };
     socket.onerror = () => { if (this.#socket === socket) this.#options.onError?.(new Error("NyxID Voice control connection failed")); };
-    socket.onclose = () => { if (this.#socket === socket) this.#options.onError?.(new Error("NyxID Voice control connection closed")); };
+    socket.onclose = () => {
+      if (this.#socket !== socket) return;
+      if (this.#finishEnd) this.close();
+      else this.#options.onError?.(new Error("NyxID Voice control connection closed"));
+    };
   }
 
   #snapshot(frame: unknown) {
@@ -368,7 +373,17 @@ export class VoiceClient {
     if (next.control_revision >= this.#session.control_revision && next.generation >= this.#session.generation) {
       this.#session = next;
     }
-    if (action === "end") this.close();
+    if (action === "end") {
+      // NyxID drains the PCM provider asynchronously. Dropping its attached stream
+      // before that drain completes can turn a user hangup into sideband_lost.
+      if (this.#pcmRelay && this.#socket?.readyState === 1 && !["closed", "failed"].includes(this.#session.state)) {
+        await new Promise<void>(resolve => {
+          const timer = setTimeout(() => this.close(), 5000);
+          this.#finishEnd = () => { clearTimeout(timer); resolve(); };
+        });
+      }
+      this.close();
+    }
     return next;
   }
 
@@ -388,6 +403,8 @@ export class VoiceClient {
   close() {
     this.#closed = true;
     this.#inputOpen = false;
+    this.#finishEnd?.();
+    this.#finishEnd = undefined;
     const socket = this.#socket;
     this.#socket = undefined;
     socket?.close();

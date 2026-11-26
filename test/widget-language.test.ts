@@ -87,3 +87,53 @@ test("browser language preferences are tried in order with Chinese as the final 
     document.documentElement.lang = "zh-CN";
   }
 });
+
+for (const voiceEnabled of [true, false]) {
+  test(`widget requests configured chat and voice services together (voice=${voiceEnabled})`, async t => {
+    const widget = new NyxAssistantElement();
+    widget.dataset.storage = "memory";
+    widget.dataset.keySource = "new";
+    if (!voiceEnabled) widget.dataset.voice = "false";
+    const services = ["chrono-llm-public", "llm-nyx"];
+    if (voiceEnabled) services.push("nyxbot-voice");
+    let requests = 0;
+    t.mock.method(globalThis, "fetch", async (input: URL, init: RequestInit) => {
+      assert.equal(input.origin, "https://nyx-assistant-sdk-chronoai.apps.nyxid.ai");
+      if (input.pathname.endsWith("/request")) {
+        requests++;
+        assert.equal(JSON.parse(String(init.body)).requested_profile, "nyx-widget");
+        return Response.json({ device_code: "device", user_code: "ABC-DEF",
+          verification_uri: "https://nyxid.ai/login/agent-key", interval: 1, expires_in: 60 });
+      }
+      if (init.method === "DELETE") return new Response(null, { status: 204 });
+      return Response.json({ credential: "test-child", credential_id: "first", api_key: {
+        id: "widget-key", owner_id: "me", scopes: "proxy", allow_all_services: false, allow_all_nodes: false,
+        allow_auto_connected_services: false, allowed_node_ids: [], allowed_service_ids: services,
+        effective_services: services.map(slug => ({ id: slug, slug, is_active: true })),
+      } });
+    });
+    document.body.append(widget);
+    try {
+      assert.equal(widget.voiceEnabled, voiceEnabled);
+      widget.connect();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const view = widget.shadowRoot!;
+      const login = new URL(view.querySelector<HTMLAnchorElement>(".verify")!.href);
+      assert.equal(login.origin, "https://nyxid.ai");
+      assert.equal(login.searchParams.get("key_source"), "new");
+      assert.equal(login.searchParams.get("permissions"), "proxy");
+      assert.deepEqual(login.searchParams.get("services")!.split(",").sort(), services);
+      await new Promise<void>(resolve => widget.addEventListener("nyx-ready", () => resolve(), { once: true }));
+      const phone = view.querySelector<HTMLButtonElement>(".voice-toggle")!;
+      assert.equal(phone.hidden, !voiceEnabled);
+      const input = view.querySelector("textarea")!;
+      input.value = "hello"; input.dispatchEvent(new Event("input"));
+      assert.equal(phone.hidden, true);
+      assert.equal(view.querySelector<HTMLButtonElement>(".send")!.hidden, false);
+      assert.equal(requests, 1);
+    } finally {
+      widget.remove();
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  });
+}

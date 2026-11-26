@@ -10,7 +10,9 @@ export class NyxIDConnection {
   readonly #fetch: typeof fetch;
   #credential?: string;
 
-  constructor(baseUrl: string | URL, authenticatedFetch: typeof fetch = fetch) {
+  get hasAgentKey() { return this.#credential !== undefined; }
+
+  constructor(baseUrl: string | URL = "https://nyx-api.chrono-ai.fun", authenticatedFetch: typeof fetch = fetch) {
     this.#base = new URL(baseUrl);
     if (this.#base.username || this.#base.password || this.#base.search || this.#base.hash) {
       throw new LocalizedError("baseUrl");
