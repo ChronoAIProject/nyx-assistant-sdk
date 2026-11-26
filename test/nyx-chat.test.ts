@@ -76,3 +76,19 @@ test("preserves Markdown boundaries and indentation across text parts", async ()
   const host = new AssistantHost(service);
   assert.equal(await host.send("read"), "    indented code\n\n**complete**  \nlast line\n");
 });
+
+
+test("reload reads only the original response and preserves a pending host call for manual review", async () => {
+  const { lookupNyxReply } = await import("../src/nyx-chat.ts");
+  const response = { id: "r1", conversation: { id: "c1" }, status: "completed",
+    output: [{ type: "message", role: "assistant", content: [{ type: "output_text",
+      text: '```nyx-host-call\n{"requestId":"req","name":"focus","arguments":{}}\n```' }] }] };
+  const connection = new NyxIDConnection(new URL("https://example.test"), async (url, init) => {
+    assert.equal(new URL(url.toString()).pathname, "/api/v1/proxy/s/llm-nyx/v1/responses/r1");
+    assert.equal(init?.method ?? "GET", "GET");
+    return Response.json(response);
+  });
+  const result = await lookupNyxReply(connection, { requestId: "req", conversationId: "c1" },
+    { id: "r1", conversationId: "c1" }, new AbortController().signal);
+  assert.equal(result.type, "call");
+});

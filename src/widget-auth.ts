@@ -14,7 +14,7 @@ const enrollment = challenge.extend({
   expiresAt: z.number().finite(), nextPollAt: z.number().finite(),
 });
 const keySummary = z.object({
-  id: z.string().min(1), owner_id: z.string().min(1), scopes: z.string(),
+  id: z.string().min(1), owner_id: z.string().min(1), owner_type: z.string().optional(), scopes: z.string(),
   allow_all_services: z.literal(false), allow_auto_connected_services: z.literal(false),
   allow_all_nodes: z.literal(false), allowed_node_ids: z.array(z.string()).length(0),
   allowed_service_ids: z.array(z.string()).min(1),
@@ -23,12 +23,20 @@ const keySummary = z.object({
   })).min(1),
 });
 
+export interface PreviousGrant {
+  credential: string;
+  /** Remove this exact old record after encrypted storage and live verification. */
+  forget(): void;
+}
 export interface BrowserAuthorizationOptions {
+  previousGrant?: () => PreviousGrant | undefined;
   base: string | URL;
   verificationOrigin: string;
   services: readonly string[];
   keySource?: "existing" | "new";
   ownerId?: string;
+  ownerType?: "personal";
+  catalogServices?: readonly string[];
   clientLabel: string;
   /** Supply tab-local storage to resume a pending request after reloading. */
   storage?: Storage;
@@ -102,8 +110,24 @@ export class BrowserAuthorization {
   }
 
   async restore(signal: AbortSignal) {
-    if (!this.hasSavedGrant) return undefined;
-    return this.#withGrantLock(signal, () => this.#restore(signal));
+    if (!this.hasSavedGrant && !this.#options.previousGrant) return undefined;
+    return this.#withGrantLock(signal, async () => {
+      const store = this.#options.credentialStorage;
+      const previous = this.#options.previousGrant?.();
+      if (!store || !previous) return this.#restore(signal);
+      const record = store.getItem(this.credentialStorageKey);
+      if (record && await openCredential(this.credentialStorageKey, record) !== previous.credential)
+        return this.#restore(signal);
+      if (!record) {
+        const sealed = await sealCredential(this.credentialStorageKey, previous.credential);
+        signal.throwIfAborted();
+        store.setItem(this.credentialStorageKey, sealed);
+      }
+      const grant = await this.#restore(signal);
+      signal.throwIfAborted();
+      previous.forget();
+      return grant;
+    });
   }
 
   async #restore(signal: AbortSignal) {
@@ -238,6 +262,8 @@ export class BrowserAuthorization {
     const ids = new Set(key?.effective_services.map(row => row.id));
     const scopes = key?.scopes.trim().split(/\s+/) ?? [];
     if (signal.aborted || !key || (this.#options.ownerId && key.owner_id !== this.#options.ownerId) ||
+        (this.#options.ownerType && key.owner_type !== this.#options.ownerType) ||
+        this.#options.catalogServices?.some(slug => !key.effective_services.some(row => row.catalog_service_slug === slug)) ||
         !scopes.includes("proxy") || scopes.some(s => s !== "proxy" && s !== "read") ||
         services.size !== this.#services.length || this.#services.some(s => !services.has(s)) ||
         ids.size !== new Set(key.allowed_service_ids).size || key.allowed_service_ids.some(id => !ids.has(id))) {
@@ -258,6 +284,6 @@ export class BrowserAuthorization {
       return fetch(input, { ...init, credentials: "omit", headers });
     });
     const revoke = () => this.#withGrantLock(undefined, revokeChild);
-    return { connection, revoke, ownerId: key.owner_id, keyId: key.id };
+    return { connection, revoke, ownerId: key.owner_id, keyId: key.id, credentialId: parsed.data!.credential_id };
   }
 }

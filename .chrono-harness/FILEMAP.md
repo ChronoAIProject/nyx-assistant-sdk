@@ -46,3 +46,6 @@
 | `infra/chrono-cd/deploy.mjs` | 工作流分支、环境、提交、GHCR 摘要、限定范围的 NyxID Key 和线上应用规格 | 工作流按摘要更新服务，核对修订、Pod 和公网探针 | 一次 PUT、至多三次 CD 读取及一次公网探针 |
 | `infra/chrono-cd/deploy.test.mjs` | 部署入口、模拟 fetch 和计时 | Node 验证环境隔离、条件写入与实际镜像核对 | 未知 |
 | `infra/chrono-cd/key-scope.mjs` | 部署目标、线上规格、已登记的 NyxID 操作 | 运维者为自动部署生成限定应用和请求体的操作范围 | 一次本地 JSON 转换 |
+
+| `src/widget-session.ts` | 空间编号、已核验子凭据编号与请求进度 | 嵌入挂件按标签恢复已确认结果 | 最多 30 条消息 |
+| `src/widget-script.ts` | 挂件类与静态脚本参数 | 单文件脚本注册并自动挂载；模块使用方自行注册 | 一次页面挂载 |
