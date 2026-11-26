@@ -2,6 +2,7 @@ import type { AgentIdentity } from "./agent-identity.ts";
 import type { NyxIDConnection } from "./connection.ts";
 import { LocalizedError } from "./i18n.ts";
 import { gatherIce } from "./widget-call.ts";
+import { RealtimeTools, type VoiceApplication } from "./realtime-tools.ts";
 
 type Service = AgentIdentity["services"][number];
 
@@ -20,18 +21,24 @@ export class TemporaryCall {
   readonly #live: (muted: boolean) => void;
   readonly #caption: (id: string, speaker: string, text: string) => void;
   readonly #failed: (error: unknown) => void;
+  readonly #application?: VoiceApplication;
+  readonly #identity?: AgentIdentity;
 
   constructor(connection: NyxIDConnection, service: Service, live: (muted: boolean) => void,
-    caption: (id: string, speaker: string, text: string) => void, failed: (error: unknown) => void) {
+    caption: (id: string, speaker: string, text: string) => void, failed: (error: unknown) => void,
+    application?: VoiceApplication, identity?: AgentIdentity) {
     this.#connection = connection;
     this.#service = service;
     this.#live = live;
     this.#caption = caption;
     this.#failed = failed;
+    this.#application = application;
+    this.#identity = identity;
   }
 
   async start() {
     const signal = this.#stop.signal;
+    const tools = this.#application && this.#identity && new RealtimeTools(this.#application, this.#connection, this.#identity, signal);
     if (!navigator.mediaDevices?.getUserMedia) throw new LocalizedError("microphoneUnavailable");
     if (typeof RTCPeerConnection === "undefined") throw new LocalizedError("voiceUnavailable");
     const media = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
@@ -63,6 +70,12 @@ export class TemporaryCall {
       if (signal.aborted || typeof data !== "string") return;
       try {
         const event = JSON.parse(data);
+        if (event.type === "response.done" && tools) {
+          void tools.respond(event.response, out => events.send(JSON.stringify(out))).catch(error => {
+            if (!signal.aborted) this.#failed(error);
+          });
+          return;
+        }
         if (event.type === "error") { this.#failed(new LocalizedError("voiceFailed")); return; }
         if (typeof event.item_id !== "string" || typeof event.transcript !== "string") return;
         if (event.type === "conversation.item.input_audio_transcription.completed") this.#caption(event.item_id, "user", event.transcript);
@@ -75,7 +88,8 @@ export class TemporaryCall {
     form.append("sdp", sdp);
     form.append("session", JSON.stringify({
       type: "realtime", model: "gpt-realtime",
-      instructions: "You are a voice assistant. Reply briefly in the language the user speaks.",
+      instructions: tools?.instructions ?? "You are a voice assistant. Reply briefly in the language the user speaks.",
+      tools: tools?.tools,
       audio: { input: { transcription: { model: "whisper-1" } } },
     }));
     const response = await this.#connection.requestService(this.#service, ["realtime", "calls"], {

@@ -3,6 +3,7 @@ import type { AgentIdentity } from "./agent-identity.ts";
 import { LocalizedError, type MessageKey } from "./i18n.ts";
 import { VoiceClient, VoiceConnectionUnavailable, type VoiceAgent, type VoiceOption, type VoiceOptions } from "./voice.ts";
 import { TemporaryCall } from "./temporary-call.ts";
+import type { VoiceApplication } from "./realtime-tools.ts";
 import { WidgetCall } from "./widget-call.ts";
 
 type Service = AgentIdentity["services"][number];
@@ -13,6 +14,8 @@ export class WidgetVoice {
   #temporary: Service[] = [];
   #load?: AbortController;
   #connection?: NyxIDConnection;
+  #app?: VoiceApplication;
+  #identity?: AgentIdentity;
   #voiceService: VoiceService = "auto";
   #bots: { service: Service; agent: VoiceAgent }[] = [];
   #agent?: VoiceAgent;
@@ -97,9 +100,10 @@ export class WidgetVoice {
   }
   #el<T extends HTMLElement = HTMLElement>(selector: string) { return this.#root.querySelector<T>(selector)!; }
   #select(selector: string) { return this.#el<HTMLSelectElement>(selector); }
-  setConnection(connection?: NyxIDConnection, managementUrl?: string, voiceService: VoiceService = "auto") {
+  setConnection(connection?: NyxIDConnection, managementUrl?: string, voiceService: VoiceService = "auto", app?: VoiceApplication) {
     const ended = this.reset();
     this.#connection = connection;
+    this.#app = app;
     this.#voiceService = voiceService;
     const setup = this.#el<HTMLAnchorElement>(".voice-setup");
     const key = this.#el<HTMLAnchorElement>(".voice-key");
@@ -119,6 +123,7 @@ export class WidgetVoice {
     const ending = this.#finish();
     this.#visible = false;
     this.#temporary = [];
+    this.#identity = undefined;
     this.#agent = this.#choices = undefined;
     this.#toggle.setAttribute("aria-expanded", "false");
     this.#el<HTMLDetailsElement>(".voice-settings").open = false;
@@ -175,6 +180,7 @@ export class WidgetVoice {
       const connection = this.#connection!;
       const identity = await connection.getAgentIdentity(signal);
       signal.throwIfAborted();
+      this.#identity = identity;
       const services = this.#voiceService === "llm-openai" ? [] :
         identity.services.filter(s => s.active && (s.catalogSlug ?? s.slug) === "nyxbot-voice");
       const bots = [];
@@ -285,7 +291,7 @@ export class WidgetVoice {
     const call: TemporaryCall | WidgetCall = selected
       ? new TemporaryCall(this.#connection!, selected, live, (id, speaker, text) => {
           if (this.#call === call) this.#renderCaptions([{ id, speaker, text }]);
-        }, failed)
+        }, failed, this.#app, this.#identity)
       : new WidgetCall(this.#connection!, bot!.service, snapshot => {
           if (this.#call !== call) return;
           this.#renderCaptions(snapshot.captions ?? []);

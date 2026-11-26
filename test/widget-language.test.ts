@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { officialRelay } from "../src/relay.ts";
 import { JSDOM } from "jsdom";
 
 const dom = new JSDOM('<html lang="zh-CN"></html>', { url: "https://example.test" });
@@ -98,7 +99,7 @@ for (const voiceEnabled of [true, false]) {
     if (voiceEnabled) services.push("llm-openai");
     let requests = 0;
     t.mock.method(globalThis, "fetch", async (input: URL, init: RequestInit) => {
-      assert.equal(input.origin, "https://nyx-assistant-sdk-chronoai.apps.nyxid.ai");
+      assert.equal(input.origin, officialRelay);
       if (input.pathname.endsWith("/request")) {
         requests++;
         assert.equal(JSON.parse(String(init.body)).requested_profile, "nyx-widget");

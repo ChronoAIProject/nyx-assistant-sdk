@@ -3,6 +3,7 @@ import { defaultLocale, LocalizedError, type MessageKey } from "./i18n.ts";
 import { NyxIDConnection } from "./connection.ts";
 import { isSealed, openCredential, sealCredential } from "./credential-storage.ts";
 import { z } from "zod";
+import { officialRelay } from "./relay.ts";
 
 const serviceSlug = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
 const challenge = z.object({
@@ -15,7 +16,7 @@ const challenge = z.object({
 const enrollment = challenge.extend({
   expiresAt: z.number().finite(), nextPollAt: z.number().finite(),
 });
-const officialRelay = "https://nyx-assistant-sdk-chronoai.apps.nyxid.ai";
+
 
 export interface PreviousGrant {
   credential: string;
@@ -102,7 +103,7 @@ export class BrowserAuthorization {
     this.#base = new URL(options.base ?? officialRelay);
     new NyxIDConnection(this.#base);
     this.#base.pathname = this.#base.pathname.replace(/\/?$/, "/");
-    const verification = new URL(options.verificationOrigin ?? (this.#base.origin === officialRelay ? "https://nyxid.ai" : this.#base.origin));
+    const verification = new URL(options.verificationOrigin ?? ([officialRelay, "https://nyx-assistant-sdk-chronoai.apps.nyxid.ai"].includes(this.#base.origin) ? "https://nyxid.ai" : this.#base.origin));
     new NyxIDConnection(verification);
     this.#origin = verification.origin;
     this.#services = options.services === "@key" ? "@key" : [...new Set(z.array(serviceSlug).min(1).parse(options.services))].sort();

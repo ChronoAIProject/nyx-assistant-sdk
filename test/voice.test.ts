@@ -127,8 +127,8 @@ test("Bot Voice keeps the deployment prefix and options query; other services ke
   const service = identity().services[0];
   await new VoiceClient(connection, service).getOptions(conversationId);
   assert.equal(urls[0].href, `https://id.example/nyx/api/v1/proxy/nyxbot-voice/${serviceId}/voice/options?conversation_id=${conversationId}`);
-  await connection.requestService({ ...service, catalogSlug: "llm-nyx" }, ["models"]);
-  assert.equal(urls[1].href, `https://id.example/nyx/api/v1/proxy/s/llm-nyx/models?_nyxid_via=${serviceId}`);
+  await connection.requestService({ ...service, slug: "llm-nyx-2", catalogSlug: "llm-nyx" }, ["models"]);
+  assert.equal(urls[1].href, `https://id.example/nyx/api/v1/proxy/s/llm-nyx-2/models?_nyxid_via=${serviceId}`);
 });
 
 test("PCM relay waits for an active snapshot, brackets input and pairs audio with its watermark", async () => {

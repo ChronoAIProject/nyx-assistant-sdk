@@ -126,6 +126,24 @@ export class AssistantHost {
     };
   }
 
+  /** Capture the tools offered to one model session. Removed or replaced bindings cannot run. */
+  captureTools() {
+    this.#lifetime.signal.throwIfAborted();
+    const bindings = new Map(this.#tools);
+    return {
+      tools: structuredClone([...bindings.values()].map(tool => tool.descriptor)),
+      context: () => { this.#lifetime.signal.throwIfAborted(); return structuredClone(this.#context()); },
+      invoke: async (name: string, args: unknown, signal: AbortSignal): Promise<ToolResult> => {
+        signal.throwIfAborted();
+        this.#lifetime.signal.throwIfAborted();
+        const tool = bindings.get(name);
+        if (!tool || this.#tools.get(name) !== tool)
+          return { ok: false, code: "tool_unavailable", message: translate(this.language, "toolUnavailable") };
+        return tool.invoke(args, AbortSignal.any([signal, tool.lifetime.signal, this.#lifetime.signal]));
+      },
+    };
+  }
+
   #prepare(input: TurnInput, calls: number): Pending {
     const bindings = new Map(this.#tools);
     return {

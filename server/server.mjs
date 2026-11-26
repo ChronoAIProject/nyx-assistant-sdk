@@ -10,10 +10,10 @@ const auth = "/api/v1/auth/agent-key/";
 const responses = "/api/v1/proxy/s/llm-nyx/v1/responses";
 const allowedHeaders = ["accept", "authorization", "content-type", "idempotency-key"];
 
-const realtimeCall = /^\/api\/v1\/proxy\/s\/llm-openai\/realtime\/calls\?_nyxid_via=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const inferencePath = /^\/api\/v1\/proxy\/s\/(?<slug>[a-z0-9][a-z0-9-]*)\/(?<operation>realtime\/calls|v1\/responses(?:\/[A-Za-z0-9_-]{1,256})?)\?_nyxid_via=(?<id>[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$/;
 
-function methods(path) {
-  if (realtimeCall.test(path)) return ["POST"];
+function methods(path, scoped) {
+  if (scoped) return [scoped.operation.startsWith("v1/responses/") ? "GET" : "POST"];
   if (path === auth + "request" || path === auth + "poll" || path === responses) return ["POST"];
   if (path === auth + "self") return ["GET", "DELETE"];
   if (path.startsWith(responses + "/") && /^[A-Za-z0-9_-]{1,256}$/.test(path.slice(responses.length + 1))) return ["GET"];
@@ -91,7 +91,8 @@ export function sdkServer({ upstreamOrigin, origins, request = fetch }) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     if (req.method === "GET" && path === "/healthz") { res.end("ok"); return; }
-    const verbs = methods(path);
+    const scoped = inferencePath.exec(path)?.groups;
+    const verbs = methods(path, scoped);
     if (!verbs.length) return fail(res, 404, "unknown_route");
     const origin = req.headers.origin;
     res.setHeader("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
@@ -112,14 +113,14 @@ export function sdkServer({ upstreamOrigin, origins, request = fetch }) {
     if (!login && !/^Bearer [^\s,]+$/i.test(bearer ?? "")) return fail(res, 401, "child_required");
     if (req.method === "POST") {
       const mime = req.headers["content-type"]?.split(";")[0].trim().toLowerCase();
-      if (realtimeCall.test(path)) {
+      if (scoped?.operation === "realtime/calls") {
         if (mime !== "multipart/form-data") return fail(res, 415, "multipart_required");
       } else if (mime !== "application/json") return fail(res, 415, "json_required");
     }
 
     const controller = new AbortController();
     const cancel = () => controller.abort();
-    const completeTurn = path === responses && req.method === "POST";
+    const completeTurn = (path === responses || scoped?.operation === "v1/responses") && req.method === "POST";
     if (!completeTurn) res.once("close", cancel);
     const options = { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(300_000)]), redirect: "error" };
     try {
@@ -132,7 +133,13 @@ export function sdkServer({ upstreamOrigin, origins, request = fetch }) {
       if (!login && path !== auth + "self") {
         const self = await request(upstream + auth + "self", { ...options, headers: { Authorization: bearer } });
         if (!self.ok) return await send(res, self, options.signal);
-        await self.body?.cancel();
+        if (scoped) {
+          const identity = await self.json();
+          const catalog = scoped.operation === "realtime/calls" ? "llm-openai" : "llm-nyx";
+          if (!identity.api_key?.effective_services?.some(row => row.is_active && row.id === scoped.id &&
+              row.slug === scoped.slug && (row.catalog_service_slug ?? row.slug) === catalog))
+            return fail(res, 403, "connection_denied");
+        } else await self.body?.cancel();
       }
       const result = await request(upstream + path, { ...options, method: req.method, headers, body });
       await send(res, result, options.signal, completeTurn);

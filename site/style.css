@@ -220,3 +220,8 @@ nyx-assistant {
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
+
+.prompt-settings { margin-top: 1rem; font-size: .88rem; color: var(--muted); }
+.prompt-settings summary { cursor: pointer; width: fit-content; }
+.prompt-settings label { display: grid; gap: .3rem; margin-top: .75rem; }
+.prompt-settings textarea { resize: vertical; font: inherit; color: inherit; background: #161422; border: 1px solid #4b465d; border-radius: .45rem; padding: .5rem; }

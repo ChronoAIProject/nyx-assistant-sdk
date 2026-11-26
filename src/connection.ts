@@ -79,14 +79,14 @@ export class NyxIDConnection {
     if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(service.id)) {
       throw new Error("Expected a NyxID service connection UUID");
     }
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) throw new Error("Invalid NyxID service slug");
+    if (![slug, service.slug].every(s => /^[a-z0-9][a-z0-9-]*$/.test(s))) throw new Error("Invalid NyxID service slug");
     const params = new URLSearchParams(query);
     if (slug === NYXBOT_VOICE_SERVICE) {
       params.delete("_nyxid_via");
       return this.#url(`api/v1/proxy/${slug}/${service.id}`, path, params);
     }
     params.set("_nyxid_via", service.id);
-    return this.#url("api/v1/proxy/s/" + slug, path, params);
+    return this.#url("api/v1/proxy/s/" + service.slug, path, params);
   }
 
   /** Open a credential-bound WebSocket in runtimes that support custom headers. */

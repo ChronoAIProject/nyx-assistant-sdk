@@ -1,4 +1,5 @@
 import { LocalizedError } from "./i18n.ts";
+import type { AgentIdentity } from "./agent-identity.ts";
 import type { NyxIDConnection } from "./connection.ts";
 import { createParser } from "eventsource-parser";
 import { z } from "zod";
@@ -56,8 +57,17 @@ export function decodeNyxReply(value: unknown, request: Pick<TurnRequest, "reque
 }
 
 type ResponseIdentity = { id: string; conversationId: string };
-export async function lookupNyxReply(connection: NyxIDConnection, turn: Pick<TurnRequest, "requestId" | "conversationId">, prior: ResponseIdentity, signal: AbortSignal) {
-  const res = await connection.request("llm-nyx", ["v1", "responses", prior.id], { signal, cache: "no-store", redirect: "error" });
+type Service = AgentIdentity["services"][number];
+export function nyxChatConnection(identity?: AgentIdentity) {
+  const active = identity?.services.filter(row => row.active && (row.catalogSlug ?? row.slug) === "llm-nyx");
+  return active?.find(row => row.slug === "llm-nyx") ?? active?.[0];
+}
+function requestChat(connection: NyxIDConnection, service: Service | undefined, path: string[], init: RequestInit) {
+  return service ? connection.requestService(service, path, init) : connection.request("llm-nyx", path, init);
+}
+
+export async function lookupNyxReply(connection: NyxIDConnection, turn: Pick<TurnRequest, "requestId" | "conversationId">, prior: ResponseIdentity, signal: AbortSignal, service?: Service) {
+  const res = await requestChat(connection, service, ["v1", "responses", prior.id], { signal, cache: "no-store", redirect: "error" });
   if (!res.ok) throw new LocalizedError("lookupHttp", String(res.status));
   const original = storedResponse.parse(await res.json());
   if (original.id !== prior.id || original.conversation.id !== prior.conversationId) throw new LocalizedError("lookupChanged");
@@ -65,22 +75,23 @@ export async function lookupNyxReply(connection: NyxIDConnection, turn: Pick<Tur
 }
 
 /** Bind one adapter to one NyxID identity for the life of a host. */
-export function createNyxChatService(connection: NyxIDConnection, options: { instructions?: string; checkpoint?: (requestId: string, response?: ResponseIdentity) => void } = {}): NyxIDService {
+export function createNyxChatService(connection: NyxIDConnection, options: { service?: Service; instructions?: string | (() => string | undefined); checkpoint?: (requestId: string, response?: ResponseIdentity) => void } = {}): NyxIDService {
   const observed = new Map<string, { id: string; conversationId: string }>();
   return {
     async turn(turn, signal, onText) {
       const prior = observed.get(turn.requestId);
       if (prior) {
-        const reply = await lookupNyxReply(connection, turn, prior, signal);
+        const reply = await lookupNyxReply(connection, turn, prior, signal, options.service);
         observed.delete(turn.requestId);
         return reply;
       }
       options.checkpoint?.(turn.requestId);
-      const res = await connection.request("llm-nyx", ["v1", "responses"], {
+      const instructions = typeof options.instructions === "function" ? options.instructions() : options.instructions;
+      const res = await requestChat(connection, options.service, ["v1", "responses"], {
         method: "POST", signal, redirect: "error", cache: "no-store",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream", "Idempotency-Key": turn.requestId },
         body: JSON.stringify({
-          model: "nyxagent/chat", instructions: [nyxHostInstructions, options.instructions].filter(Boolean).join("\n"), store: true, stream: true,
+          model: "nyxagent/chat", instructions: [nyxHostInstructions, instructions].filter(Boolean).join("\n"), store: true, stream: true,
           input: JSON.stringify(turn), ...(turn.conversationId ? { conversation: turn.conversationId } : {}),
         }),
       });

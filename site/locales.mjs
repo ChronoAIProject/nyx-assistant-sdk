@@ -1,11 +1,12 @@
 export const defaultLocale = "zh";
-export const relay = "https://nyx-assistant-sdk-chronoai.apps.nyxid.ai";
+export { officialRelay as relay } from "../dist/relay.js";
 
 export const locales = {
   zh: {
     lang: "zh-CN",
     name: "简体中文",
     page: {
+      promptSettings: "自定义助手提示词", textPrompt: "文字提示词（下条消息生效）", voicePrompt: "语音提示词（下次通话生效）",
       title: "NyxID Assistant SDK · 给应用接上 Nyx 助手",
       description: "NyxID Assistant SDK 让网页和原生应用接入用户已授权的 NyxID 服务，并通过宿主工具读取和操作当前界面。",
       skip: "跳到主要内容",
@@ -85,6 +86,7 @@ export const locales = {
     lang: "en",
     name: "English",
     page: {
+      promptSettings: "Customize assistant instructions", textPrompt: "Text instructions (next message)", voicePrompt: "Voice instructions (next call)",
       title: "NyxID Assistant SDK · Add a Nyx assistant to your app",
       description: "Connect web and native apps to authorized NyxID services and let the assistant read and act on the current interface.",
       skip: "Skip to main content",

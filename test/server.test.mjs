@@ -152,7 +152,10 @@ test("temporary voice forwards SDP only to the selected OpenAI connection", asyn
   const requests = [];
   const server = sdkServer({ upstreamOrigin: "https://id.example", origins: [], request: async (url, options) => {
     requests.push({ url, options });
-    return new Response(url.endsWith("/self") ? "{}" : "v=0", { headers: { "Content-Type": "application/sdp" } });
+    if (url.endsWith("/self")) return Response.json({api_key:{effective_services:[
+      {id:"22caf9db-4c7d-4712-89e8-09c96c58489b",slug:"llm-openai",is_active:true},
+    ]}});
+    return new Response("v=0", { headers: { "Content-Type": "application/sdp" } });
   } });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");

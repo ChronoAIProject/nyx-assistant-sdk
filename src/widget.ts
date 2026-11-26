@@ -1,7 +1,7 @@
 import { LocalizedError, type MessageKey, resolveLocale, translate } from "./i18n.ts";
 import { AssistantHost, type Json, NyxIDConnection, z } from "./index.ts";
 import { WidgetSession } from "./widget-session.ts";
-import { createNyxChatService, lookupNyxReply } from "./nyx-chat.ts";
+import { createNyxChatService, lookupNyxReply, nyxChatConnection } from "./nyx-chat.ts";
 import { BrowserAuthorization, type PreviousGrant } from "./widget-auth.ts";
 import { widgetStyle } from "./widget-style.ts";
 import { renderAssistantMarkdown } from "./markdown.ts";
@@ -26,7 +26,14 @@ export class NyxAssistantElement extends HTMLElement {
     title: this.ownerDocument.title,
     language: this.lang || this.ownerDocument.documentElement.lang || this.#locale,
   });
-  instructions?: string;
+  declare instructions?: string;
+  declare textInstructions?: string;
+  declare voiceInstructions?: string;
+  #instructions(mode: "text" | "voice") {
+    const specific = mode === "text" ? this.textInstructions ?? this.dataset.textInstructions :
+      this.voiceInstructions ?? this.dataset.voiceInstructions;
+    return [this.instructions ?? this.dataset.instructions, specific].filter(Boolean).join("\n");
+  }
   previousGrant?: () => PreviousGrant | undefined;
   get busy() { return this.#busy; }
   get access() { return this.#host ? this.#grant?.access : undefined; }
@@ -251,7 +258,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#connection = connection;
     this.#session = session;
     const host = new AssistantHost(createNyxChatService(connection, {
-      instructions: this.instructions,
+      service: nyxChatConnection(grant?.identity), instructions: () => this.#instructions("text"),
       checkpoint: (requestId, response) => {
         if (session && this.#session === session) session.save({ ...session.state, pending: { requestId, ...response } });
       },
@@ -260,7 +267,8 @@ export class NyxAssistantElement extends HTMLElement {
     host.language = this.#locale;
     this.#host = host;
     this.#grant = grant;
-    this.#voice.setConnection(connection, grant?.access.managementUrl, grant ? this.#voiceService : "auto");
+    this.#voice.setConnection(connection, grant?.access.managementUrl, grant ? this.#voiceService : "auto",
+      { host, instructions: () => this.#instructions("voice") });
     if (grant) {
       this.#el(".access p").textContent = grant.access.services.join(this.#text("separator"));
       this.#el<HTMLAnchorElement>(".access a").href = grant.access.managementUrl;
@@ -457,7 +465,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#busy = true;
     this.#controls();
     try {
-      const reply = await lookupNyxReply(this.#connection, pending, { id: pending.id, conversationId: pending.conversationId }, controller.signal);
+      const reply = await lookupNyxReply(this.#connection, pending, { id: pending.id, conversationId: pending.conversationId }, controller.signal, nyxChatConnection(this.#grant?.identity));
       if (controller.signal.aborted) return;
       if (reply.type !== "answer") throw new LocalizedError("previousAction");
       session.message(reply.text, false, reply.conversationId);
