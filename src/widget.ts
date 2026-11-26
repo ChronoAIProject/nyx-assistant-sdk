@@ -1,16 +1,15 @@
+import { LocalizedError, type MessageKey, widgetText } from "./widget-i18n.ts";
 import { AssistantHost, type Json, NyxIDConnection, z } from "./index.ts";
 import { WidgetSession } from "./widget-session.ts";
 import { createNyxChatService, lookupNyxReply } from "./nyx-chat.ts";
 import { BrowserAuthorization, type PreviousGrant } from "./widget-auth.ts";
 import { widgetStyle } from "./widget-style.ts";
 import { renderAssistantMarkdown } from "./markdown.ts";
-import { widgetMessages } from "./widget-messages.ts";
 
 type BrowserGrant = Awaited<ReturnType<BrowserAuthorization["connect"]>>;
 
 export class NyxAssistantElement extends HTMLElement {
   #root = this.attachShadow({ mode: "open" });
-  #language: keyof typeof widgetMessages = "zh";
   #host?: AssistantHost;
   #login?: { controller: AbortController; restoreOnly: boolean };
   #grant?: BrowserGrant;
@@ -31,33 +30,66 @@ export class NyxAssistantElement extends HTMLElement {
   get z() {
     return z;
   }
-  get #copy() {
-    return widgetMessages[this.#language];
+
+  static observedAttributes = ["lang"];
+  #status?: { key: MessageKey; value?: string; diagnostic?: string };
+
+  #text(key: MessageKey, value?: string) {
+    return widgetText(this.lang, key, value);
   }
+  #showStatus(key?: MessageKey, value?: string, diagnostic?: string) {
+    this.#status = key && { key, value, diagnostic };
+    this.#renderStatus();
+  }
+  #renderStatus() {
+    const status = this.#status;
+    this.#el(".status").textContent = status
+      ? [this.#text(status.key, status.value), status.diagnostic].filter(Boolean).join(" ")
+      : "";
+  }
+  #showError(error: unknown, fallback: MessageKey) {
+    if (error instanceof LocalizedError) this.#showStatus(error.key, error.value);
+    else if (error instanceof TypeError && error.message === "Failed to fetch") this.#showStatus("network");
+    else if (error instanceof DOMException && error.name === "TimeoutError") this.#showStatus("timeout");
+    else this.#showStatus(fallback, undefined, error instanceof Error ? error.message : undefined);
+  }
+  #renderLabels() {
+    for (const el of this.#root.querySelectorAll<HTMLElement>("[data-label]")) {
+      el.textContent = this.#text(el.dataset.label as MessageKey);
+    }
+    for (const el of this.#root.querySelectorAll<HTMLElement>("[data-aria]")) {
+      el.setAttribute("aria-label", this.#text(el.dataset.aria as MessageKey));
+    }
+    this.#el<HTMLTextAreaElement>("textarea").placeholder = this.#text("placeholder");
+    this.#el(".disconnect").textContent = this.#text(this.#login?.restoreOnly === false ? "cancelApproval" : "disconnect");
+    if (this.access) this.#el(".access p").textContent = this.access.services.join(this.#text("separator"));
+    this.#renderStatus();
+  }
+  attributeChangedCallback() { this.#renderLabels(); }
 
   constructor() {
     super();
     // Only the static widget shell is assigned here.
     this.#root.innerHTML = `<style>${widgetStyle}</style>
-      <button class="launch" part="launcher" type="button" aria-expanded="false" aria-controls="panel"><span class="bubble" part="launcher-icon" aria-hidden="true"></span><span class="launch-label"></span></button>
+      <button class="launch" part="launcher" type="button" aria-expanded="false" aria-controls="panel"><span class="bubble" part="launcher-icon" aria-hidden="true"></span><span class="launch-label" data-label="title"></span></button>
       <section hidden id="panel" class="panel" part="panel" role="dialog" aria-labelledby="title">
-        <header part="header"><h2 id="title"><span class="identity" aria-hidden="true"></span><span class="title-label"></span></h2><button class="disconnect" part="secondary-action" type="button" hidden></button>
-          <button class="close" part="close" type="button">×</button></header>
-        <details class="access" hidden><summary></summary>
-          <p></p><a target="_blank" rel="noopener noreferrer"></a></details>
-        <div class="chat" role="log" aria-live="polite"></div>
+        <header part="header"><h2 id="title"><span class="identity" aria-hidden="true"></span><span class="title-label" data-label="title"></span></h2><button class="disconnect" part="secondary-action" type="button" hidden></button>
+          <button class="close" part="close" type="button" data-aria="close">×</button></header>
+        <details class="access" hidden><summary data-label="services"></summary>
+          <p></p><a target="_blank" rel="noopener noreferrer" data-label="manage"></a></details>
+        <div class="chat" role="log" data-aria="chat" aria-live="polite"></div>
         <div class="starters" hidden><slot name="prompt"></slot></div>
         <div class="controls"><p class="status" role="status"></p>
-          <a class="verify" hidden target="_blank" rel="noopener noreferrer"></a>
-          <p class="connect-hint"></p>
-          <button class="connect" part="primary-action" type="button"></button>
-          <form part="composer" hidden><textarea rows="1" part="input" required></textarea>
-            <button class="send" part="primary-action send" type="submit"><span class="send-label"></span><span class="send-icon" aria-hidden="true">↑</span></button></form>
-          <button class="resume" hidden type="button"></button>
-          <button class="reset" hidden type="button"></button>
+          <a class="verify" data-label="openApproval" hidden target="_blank" rel="noopener noreferrer"></a>
+          <p class="connect-hint" data-label="hint"></p>
+          <button class="connect" part="primary-action" type="button" data-label="connect"></button>
+          <form part="composer" hidden><textarea rows="1" part="input" data-aria="message" required></textarea>
+            <button class="send" part="primary-action send" type="submit" data-aria="send"><span class="send-label" data-label="send"></span><span class="send-icon" aria-hidden="true">↑</span></button></form>
+          <button class="resume" hidden type="button" data-label="resume"></button>
+          <button class="reset" hidden type="button" data-label="reset"></button>
         </div>
       </section>`;
-    this.#localize();
+    this.#renderLabels();
     this.#el(".launch").onclick = () => this.#open(this.#el(".panel").hidden);
     const prompts = this.#el<HTMLSlotElement>('slot[name="prompt"]');
     prompts.onslotchange = () => this.#controls();
@@ -86,7 +118,7 @@ export class NyxAssistantElement extends HTMLElement {
     };
     this.#el(".reset").onclick = () => {
       if (!this.#session || !this.#connection || this.#busy ||
-          !window.confirm(this.#copy.confirmReset)) return;
+          !window.confirm(this.#text("confirmReset"))) return;
       const session = this.#session;
       session.save({ messages: [] });
       this.#bind(this.#connection, this.#grant, session);
@@ -104,27 +136,7 @@ export class NyxAssistantElement extends HTMLElement {
   #el<T extends HTMLElement = HTMLElement>(selector: string): T {
     return this.#root.querySelector<T>(selector)!;
   }
-  #localize() {
-    const copy = this.#copy;
-    this.#el(".launch-label").textContent = copy.title;
-    this.#el(".title-label").textContent = copy.title;
-    this.#el(".close").setAttribute("aria-label", copy.close);
-    this.#el(".chat").setAttribute("aria-label", copy.chat);
-    this.#el(".access summary").textContent = copy.services;
-    this.#el(".access a").textContent = copy.manage;
-    this.#el(".connect-hint").textContent = copy.hint;
-    this.#el(".connect").textContent = copy.connect;
-    const input = this.#el<HTMLTextAreaElement>("textarea");
-    input.setAttribute("aria-label", copy.message);
-    input.placeholder = copy.placeholder;
-    this.#el(".send").setAttribute("aria-label", copy.send);
-    this.#el(".send-label").textContent = copy.send;
-    this.#el(".resume").textContent = copy.resume;
-    this.#el(".reset").textContent = copy.reset;
-  }
   connectedCallback() {
-    this.#language = this.lang.toLowerCase().split("-")[0] === "en" ? "en" : "zh";
-    this.#localize();
     if (this.getAttribute("layout") === "embedded") {
       this.#el(".panel").hidden = false;
       this.#el(".panel").setAttribute("role", "region");
@@ -167,8 +179,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#clearView();
     return (this.#authorization?.persistent ? undefined : revoke?.())?.catch(() => {
       if (!this.#host)
-        this.#el(".status").textContent =
-          this.#copy.verifyRevoke;
+        this.#showStatus("verifyRevoke");
     });
   }
   #clearView() {
@@ -187,7 +198,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#el(".access a").removeAttribute("href");
     this.#el(".chat").replaceChildren();
     this.#el<HTMLTextAreaElement>("textarea").value = "";
-    this.#el(".status").textContent = "";
+    this.#showStatus();
     this.#el(".verify").hidden = true;
     this.#controls();
   }
@@ -210,7 +221,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#host = host;
     this.#grant = grant;
     if (grant) {
-      this.#el(".access p").textContent = new Intl.ListFormat(this.#language).format(grant.access.services);
+      this.#el(".access p").textContent = grant.access.services.join(this.#text("separator"));
       this.#el<HTMLAnchorElement>(".access a").href = grant.access.managementUrl;
       this.#el(".access").hidden = false;
     }
@@ -232,7 +243,8 @@ export class NyxAssistantElement extends HTMLElement {
     try { storage = sessionStorage; } catch { /* Storage is optional for this visit. */ }
     const services = (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
     return new BrowserAuthorization({
-      base, verificationOrigin: this.dataset.verificationOrigin || base.origin, services, storage, credentialStorage, language: this.#language,
+      language: this.lang.toLowerCase().startsWith("en") ? "en" : "zh",
+      base, verificationOrigin: this.dataset.verificationOrigin || base.origin, services, storage, credentialStorage,
       previousGrant: this.previousGrant, ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined, catalogServices: this.dataset.catalogServices?.split(","), clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
     });
   }
@@ -255,7 +267,7 @@ export class NyxAssistantElement extends HTMLElement {
     const { signal } = controller;
     this.#login = login;
     this.#controls();
-    this.#el(".status").textContent = this.#copy.connecting;
+    this.#showStatus("connecting");
     try {
       const flow = this.#authorization ??= this.#createFlow();
       let grant = restoreOnly ? await flow.restore(signal) : undefined;
@@ -263,9 +275,8 @@ export class NyxAssistantElement extends HTMLElement {
         (url, code) => {
           const link = this.#el<HTMLAnchorElement>(".verify");
           link.href = url.href;
-          link.textContent = this.#copy.openApproval;
           link.hidden = false;
-          this.#el(".status").textContent = this.#copy.verifyCode(code);
+          this.#showStatus("verifyCode", code);
           this.#controls();
         },
       );
@@ -274,7 +285,7 @@ export class NyxAssistantElement extends HTMLElement {
         return;
       }
       if (!grant) {
-        this.#el(".status").textContent = "";
+        this.#showStatus();
         return;
       }
       const session = this.dataset.session && new WidgetSession(this.dataset.session, flow.credentialStorageKey, grant.credentialId);
@@ -282,13 +293,12 @@ export class NyxAssistantElement extends HTMLElement {
       if (session && session.state.pending) {
         this.dispatchEvent(new Event("nyx-recovery"));
         if (session.state.pending.id) void this.#recover();
-        else this.#el(".status").textContent = this.#copy.missingResponse;
+        else this.#showStatus("missingResponse");
       }
       if (!this.#el(".panel").hidden) this.#el("textarea").focus();
     } catch (error) {
       if (!signal.aborted)
-        this.#el(".status").textContent =
-          error instanceof Error ? error.message : this.#copy.connectFailed;
+        this.#showError(error, "connectFailed");
     } finally {
       if (this.#login === login) {
         this.#login = undefined;
@@ -308,7 +318,7 @@ export class NyxAssistantElement extends HTMLElement {
     }
     this.#revoking = true;
     this.#clearView();
-    this.#el(".status").textContent = this.#copy.revoking;
+    this.#showStatus("revoking");
     let failed = false;
     try {
       await revoke();
@@ -318,7 +328,7 @@ export class NyxAssistantElement extends HTMLElement {
     if (this.#grant?.revoke !== revoke) return;
     this.#revoking = false;
     if (!failed) this.#grant = undefined;
-    this.#el(".status").textContent = failed ? this.#copy.revokeFailed : "";
+    this.#showStatus(failed ? "revokeFailed" : undefined);
     this.#controls();
     if (!this.#el(".panel").hidden) this.#el(failed ? ".disconnect" : ".connect").focus();
   }
@@ -331,7 +341,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#el(".connect-hint").hidden = this.#el(".connect").hidden;
     disconnect.hidden = !this.#grant && !waitingForApproval;
     disconnect.disabled = this.#revoking;
-    disconnect.textContent = waitingForApproval ? this.#copy.cancelApproval : this.#copy.disconnect;
+    disconnect.textContent = this.#text(waitingForApproval ? "cancelApproval" : "disconnect");
     this.#el("form").hidden = !this.#host;
     this.#el(".panel").toggleAttribute("data-connected", Boolean(this.#host));
     this.#el(".starters").hidden = !this.#host || this.#busy || pending ||
@@ -357,11 +367,12 @@ export class NyxAssistantElement extends HTMLElement {
     const follow = isUser || chat.scrollHeight - chat.clientHeight - chat.scrollTop <= 4;
     const message = document.createElement(isUser ? "p" : "div");
     message.className = isUser ? "msg user" : "msg markdown";
-    message.setAttribute("aria-label", isUser ? this.#copy.you : "Nyx");
+    if (isUser) message.dataset.aria = "you";
+    message.setAttribute("aria-label", isUser ? this.#text("you") : "Nyx");
     if (isUser) message.textContent = text;
     else {
       try {
-        message.append(renderAssistantMarkdown(text, this.#copy.image));
+        message.append(renderAssistantMarkdown(text, this.#text("image")));
       } catch {
         // A rendering failure must still leave the confirmed source readable.
         message.classList.remove("markdown");
@@ -383,12 +394,12 @@ export class NyxAssistantElement extends HTMLElement {
     try {
       const reply = await lookupNyxReply(this.#connection, pending, { id: pending.id, conversationId: pending.conversationId }, controller.signal);
       if (controller.signal.aborted) return;
-      if (reply.type !== "answer") throw Error(this.#copy.previousAction);
+      if (reply.type !== "answer") throw new LocalizedError("previousAction");
       session.message(reply.text, false, reply.conversationId);
       this.#bind(this.#connection, this.#grant, session);
       this.dispatchEvent(new CustomEvent("nyx-answer", { detail: reply.text }));
     } catch (error) {
-      if (!controller.signal.aborted) this.#el(".status").textContent = error instanceof Error ? error.message : this.#copy.recoverFailed;
+      if (!controller.signal.aborted) this.#showError(error, "recoverFailed");
     } finally {
       if (this.#session === session) { this.#busy = false; this.#controls(); }
     }
@@ -409,7 +420,7 @@ export class NyxAssistantElement extends HTMLElement {
       try {
         this.#session?.message(text, true, host.conversationId);
       } catch {
-        this.#el(".status").textContent = this.#copy.saveChatFailed;
+        this.#showStatus("saveChatFailed");
         return;
       }
       this.#message(text, true);
@@ -417,20 +428,17 @@ export class NyxAssistantElement extends HTMLElement {
     }
     this.#busy = true;
     this.#controls();
-    this.#el(".status").textContent = resume
-      ? this.#copy.recovering
-      : this.#copy.waiting;
+    this.#showStatus(resume ? "recovering" : "waiting");
     try {
       const answer = await (resume ? host.resume() : host.send(text));
       if (host !== this.#host) return;
-      this.#el(".status").textContent = "";
+      this.#showStatus();
       this.#session?.message(answer, false, host.conversationId);
       this.#message(answer, false);
       this.dispatchEvent(new CustomEvent("nyx-answer", { detail: answer }));
     } catch (error) {
       if (host === this.#host)
-        this.#el(".status").textContent =
-          error instanceof Error ? error.message : this.#copy.requestFailed;
+        this.#showError(error, "requestFailed");
     } finally {
       if (host === this.#host) {
         this.#busy = false;
