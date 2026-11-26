@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="{{lang}}" data-locale="{{locale}}">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NyxID 工单筛选</title>
+<title>{{ticketsTitle}}</title>
 <style>
   :root { font: 16px/1.5 Inter, system-ui, sans-serif; color: #182325; background: #f5f6f3; }
   nyx-assistant { --nyx-accent: #295d51; --nyx-radius: 14px; }
@@ -15,11 +15,12 @@
   output { display: block; margin: 1rem 0; white-space: pre-wrap; }
 </style>
 <main>
-  <h1>工单</h1>
-  <label>状态 <select id="filter"><option value="all">全部</option><option value="open">待处理</option><option value="closed">已关闭</option></select></label>
+  <nav aria-label="{{siteNav}}">{{languageLinks}}</nav>
+  <h1>{{ticket}}</h1>
+  <label>{{status}} <select id="filter"><option value="all">{{all}}</option><option value="open">{{open}}</option><option value="closed">{{closed}}</option></select></label>
   <span id="count" aria-live="polite"></span>
-  <table><thead><tr><th>工单</th><th>状态</th></tr></thead><tbody id="rows"></tbody></table>
-  <label><input id="readonly" type="checkbox"> 只读模式</label>
+  <table><thead><tr><th>{{ticket}}</th><th>{{status}}</th></tr></thead><tbody id="rows"></tbody></table>
+  <label><input id="readonly" type="checkbox"> {{readOnly}}</label>
 </main>
 <script type="module" src="/app.js"></script>
 <script defer src="/nyx-widget.js" data-proxy="/"></script>

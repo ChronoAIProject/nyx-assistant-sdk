@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
-import { AssistantHost, type TurnRequest, type NyxIDService } from "../src/index.ts";
+import { AssistantHost, LocalizedError, type TurnRequest, type NyxIDService } from "../src/index.ts";
 
 function call(name: string, id: string, args: unknown = {}) {
   return { type: "call" as const, conversationId: "session", callId: id, name, arguments: args };
@@ -78,4 +78,29 @@ test("disposing the host fences a delayed response after an identity change", as
   h.dispose();
   gate.resolve();
   await assert.rejects(pending); assert.equal(writes, 0);
+});
+
+test("a host localizes its own errors and tool failures while preserving stable result codes", async () => {
+  const h = new AssistantHost({ async turn(request) {
+    if (request.input.type === "user") return call("unknown_tool", "c");
+    const { result } = request.input;
+    assert.equal(result.ok, false);
+    if (result.ok) throw new Error("Expected a tool failure");
+    assert.equal(result.code, "tool_unavailable");
+    return answer(result.message);
+  } });
+  h.language = "zh-Hans-CN";
+  assert.throws(() => h.send(""), /消息为空/);
+  assert.equal(await h.send("试用"), "当前实例无法使用此工具。");
+  h.language = "en-GB";
+  assert.throws(() => h.send(""), /Message is empty/);
+});
+
+test("service diagnostics use the calling host's language and preserve the original error", async () => {
+  const error = new LocalizedError("turnHttp", "503");
+  const host = new AssistantHost({ async turn() { throw error; } });
+  host.language = "zh-CN";
+  await assert.rejects(host.send("你好"), thrown => thrown instanceof LocalizedError &&
+    thrown.message === "NyxID 聊天请求失败（HTTP 503）。" && thrown.cause === error);
+  assert.equal(error.message, "NyxID turn returned HTTP 503");
 });

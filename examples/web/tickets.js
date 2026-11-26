@@ -4,14 +4,7 @@ const issues = [
   { id: "address", state: "open" },
 ];
 
-export const chineseTickets = {
-  names: { invoice: "核对发票", list: "整理清单", address: "更新地址" },
-  states: { all: "全部", open: "待处理", closed: "已关闭" },
-  count: count => `${count} 条`,
-  readOnly: "此页面为只读模式。",
-};
-
-export function mountTickets(copy = chineseTickets) {
+export function mountTickets(copy) {
   const filter = document.getElementById("filter");
   const rows = document.getElementById("rows");
   const count = document.getElementById("count");
@@ -39,13 +32,13 @@ export function mountTickets(copy = chineseTickets) {
     registerTools(host, z) {
       host.registerTool({
         name: "read_filter",
-        description: "Read the current filter and displayed row count.",
+        description: copy.readFilter,
         parameters: z.object({}),
         execute: () => ({ ok: true, value: state() }),
       });
       host.registerTool({
         name: "set_filter",
-        description: "Set the ticket filter and report the displayed row count.",
+        description: copy.setFilter,
         parameters: z.object({ filter: z.enum(["all", "open", "closed"]) }),
         execute(input) {
           if (readOnly.checked)

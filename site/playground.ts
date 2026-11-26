@@ -9,8 +9,7 @@ const prompts = {
   closed: { name: "set_filter", arguments: { filter: "closed" } },
 } as const;
 
-const locale = document.documentElement.dataset.locale === "en" ? "en" : "zh";
-const copy = locales[locale];
+const copy = locales[document.documentElement.dataset.locale as keyof typeof locales];
 const list = new Intl.ListFormat(copy.lang);
 const tickets = mountTickets(copy.tickets);
 const widget = document.querySelector<NyxAssistantElement>("nyx-assistant")!;
@@ -57,6 +56,7 @@ const preview: NyxIDService = {
 };
 
 const host = new AssistantHost(preview, tickets.state);
+host.language = copy.lang;
 tickets.registerTools(host, z);
 host.subscribe((event) => {
   if (event.type !== "tool_result") return;

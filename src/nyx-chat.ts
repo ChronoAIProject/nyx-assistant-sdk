@@ -1,4 +1,4 @@
-import { LocalizedError } from "./widget-i18n.ts";
+import { LocalizedError } from "./i18n.ts";
 import type { NyxIDConnection } from "./connection.ts";
 import { createParser } from "eventsource-parser";
 import { z } from "zod";
@@ -31,15 +31,15 @@ export const nyxHostInstructions = [
 export function decodeNyxReply(value: unknown, request: Pick<TurnRequest, "requestId" | "conversationId">): ServiceReply {
   const response = storedResponse.parse(value);
   if (request.conversationId && response.conversation.id !== request.conversationId) {
-    throw new LocalizedError("differentConversation", "", "en");
+    throw new LocalizedError("differentConversation");
   }
-  if (response.status !== "completed") throw new LocalizedError("turnStatus", String(response.status), "en");
+  if (response.status !== "completed") throw new LocalizedError("turnStatus", String(response.status));
   const text = response.output
     .filter(item => item.type === "message" && item.role === "assistant")
     .map(item => (item.content ?? []).filter(part => part.type === "output_text").map(part => part.text ?? "").join(""))
     .join("\n");
   const conversationId = response.conversation.id;
-  if (!text.trim()) throw new LocalizedError("missingReply", "", "en");
+  if (!text.trim()) throw new LocalizedError("missingReply");
   if (!text.includes(marker)) return { type: "answer", conversationId, text };
   const block = text.trim();
   const start = block.indexOf(marker);
@@ -48,19 +48,19 @@ export function decodeNyxReply(value: unknown, request: Pick<TurnRequest, "reque
   if ((start > 0 && block[start - 1] !== "\n") || start !== block.lastIndexOf(marker) ||
       bodyStart < 0 || bodyStart >= bodyEnd || block.slice(bodyEnd + 1) !== "```" ||
       !/^[ \t]*\r?$/.test(block.slice(start + marker.length, bodyStart))) {
-    throw new LocalizedError("invalidTool", "", "en");
+    throw new LocalizedError("invalidTool");
   }
   const call = action.parse(JSON.parse(block.slice(bodyStart + 1, bodyEnd)));
-  if (call.requestId !== request.requestId) throw new LocalizedError("staleTool", "", "en");
+  if (call.requestId !== request.requestId) throw new LocalizedError("staleTool");
   return { type: "call", conversationId, callId: response.id, name: call.name, arguments: call.arguments };
 }
 
 type ResponseIdentity = { id: string; conversationId: string };
 export async function lookupNyxReply(connection: NyxIDConnection, turn: Pick<TurnRequest, "requestId" | "conversationId">, prior: ResponseIdentity, signal: AbortSignal) {
   const res = await connection.request("llm-nyx", ["v1", "responses", prior.id], { signal, cache: "no-store", redirect: "error" });
-  if (!res.ok) throw new LocalizedError("lookupHttp", String(res.status), "en");
+  if (!res.ok) throw new LocalizedError("lookupHttp", String(res.status));
   const original = storedResponse.parse(await res.json());
-  if (original.id !== prior.id || original.conversation.id !== prior.conversationId) throw new LocalizedError("lookupChanged", "", "en");
+  if (original.id !== prior.id || original.conversation.id !== prior.conversationId) throw new LocalizedError("lookupChanged");
   return decodeNyxReply(original, turn);
 }
 
@@ -84,9 +84,9 @@ export function createNyxChatService(connection: NyxIDConnection, options: { ins
           input: JSON.stringify(turn), ...(turn.conversationId ? { conversation: turn.conversationId } : {}),
         }),
       });
-      if (!res.ok) throw new LocalizedError("turnHttp", String(res.status), "en");
+      if (!res.ok) throw new LocalizedError("turnHttp", String(res.status));
       if (res.headers.get("content-type")?.startsWith("application/json")) return decodeNyxReply(await res.json(), turn);
-      if (!res.body || !res.headers.get("content-type")?.startsWith("text/event-stream")) throw new LocalizedError("badStream", "", "en");
+      if (!res.body || !res.headers.get("content-type")?.startsWith("text/event-stream")) throw new LocalizedError("badStream");
       let reply: ServiceReply | undefined;
       const parser = createParser({ onEvent(event) {
         signal.throwIfAborted();
@@ -98,13 +98,13 @@ export function createNyxChatService(connection: NyxIDConnection, options: { ins
           const { id, conversation } = identity.parse(frame.response);
           const seen = observed.get(turn.requestId);
           if ((turn.conversationId && conversation.id !== turn.conversationId) || (seen && (id !== seen.id || conversation.id !== seen.conversationId))) {
-            throw new LocalizedError("streamChanged", "", "en");
+            throw new LocalizedError("streamChanged");
           }
           if (!seen) {
             observed.set(turn.requestId, { id, conversationId: conversation.id });
             options.checkpoint?.(turn.requestId, { id, conversationId: conversation.id });
           }
-          if (type === "response.failed") throw new LocalizedError("failedTurn", "", "en");
+          if (type === "response.failed") throw new LocalizedError("failedTurn");
           if (type === "response.completed") reply = decodeNyxReply(frame.response, turn);
         }
       } });
@@ -115,10 +115,10 @@ export function createNyxChatService(connection: NyxIDConnection, options: { ins
           const chunk = await reader.read();
           if (chunk.done) break;
           received += chunk.value.length;
-          if (received > 8 * 1024 * 1024) throw new LocalizedError("largeStream", "", "en");
+          if (received > 8 * 1024 * 1024) throw new LocalizedError("largeStream");
           parser.feed(chunk.value);
         }
-        if (!reply) throw new LocalizedError("streamEnded", "", "en");
+        if (!reply) throw new LocalizedError("streamEnded");
         observed.delete(turn.requestId);
         return reply;
       } finally {

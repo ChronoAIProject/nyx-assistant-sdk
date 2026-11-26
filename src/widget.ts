@@ -1,4 +1,4 @@
-import { LocalizedError, type MessageKey, widgetText } from "./widget-i18n.ts";
+import { LocalizedError, type MessageKey, resolveLocale, translate } from "./i18n.ts";
 import { AssistantHost, type Json, NyxIDConnection, z } from "./index.ts";
 import { WidgetSession } from "./widget-session.ts";
 import { createNyxChatService, lookupNyxReply } from "./nyx-chat.ts";
@@ -19,7 +19,10 @@ export class NyxAssistantElement extends HTMLElement {
   #session?: WidgetSession;
   #connection?: NyxIDConnection;
   #recovery?: AbortController;
-  context: () => Json = () => ({ title: document.title, language: document.documentElement.lang });
+  context: () => Json = () => ({
+    title: this.ownerDocument.title,
+    language: this.lang || this.ownerDocument.documentElement.lang || this.#locale,
+  });
   instructions?: string;
   previousGrant?: () => PreviousGrant | undefined;
   get busy() { return this.#busy; }
@@ -34,8 +37,12 @@ export class NyxAssistantElement extends HTMLElement {
   static observedAttributes = ["lang"];
   #status?: { key: MessageKey; value?: string; diagnostic?: string };
 
+  #locale = resolveLocale();
+  #pageLanguage = new window.MutationObserver(() => this.#renderLabels());
+  #languageChanged = () => this.#renderLabels();
+
   #text(key: MessageKey, value?: string) {
-    return widgetText(this.lang, key, value);
+    return translate(this.#locale, key, value);
   }
   #showStatus(key?: MessageKey, value?: string, diagnostic?: string) {
     this.#status = key && { key, value, diagnostic };
@@ -54,6 +61,9 @@ export class NyxAssistantElement extends HTMLElement {
     else this.#showStatus(fallback, undefined, error instanceof Error ? error.message : undefined);
   }
   #renderLabels() {
+    this.#locale = resolveLocale(this.lang, this.ownerDocument.documentElement.lang, ...window.navigator.languages);
+    this.#el(".panel").lang = this.#el(".launch").lang = this.#locale;
+    if (this.#host) this.#host.language = this.#locale;
     for (const el of this.#root.querySelectorAll<HTMLElement>("[data-label]")) {
       el.textContent = this.#text(el.dataset.label as MessageKey);
     }
@@ -137,6 +147,9 @@ export class NyxAssistantElement extends HTMLElement {
     return this.#root.querySelector<T>(selector)!;
   }
   connectedCallback() {
+    this.#renderLabels();
+    this.#pageLanguage.observe(this.ownerDocument.documentElement, { attributes: true, attributeFilter: ["lang"] });
+    window.addEventListener("languagechange", this.#languageChanged);
     if (this.getAttribute("layout") === "embedded") {
       this.#el(".panel").hidden = false;
       this.#el(".panel").setAttribute("role", "region");
@@ -167,6 +180,8 @@ export class NyxAssistantElement extends HTMLElement {
     }
   };
   disconnectedCallback() {
+    this.#pageLanguage.disconnect();
+    window.removeEventListener("languagechange", this.#languageChanged);
     window.removeEventListener("storage", this.#storageChanged);
     window.removeEventListener("pagehide", this.#pagehide);
     window.removeEventListener("pageshow", this.#pageshow);
@@ -218,6 +233,7 @@ export class NyxAssistantElement extends HTMLElement {
       },
     }), () => this.context(), session?.state.conversation);
     for (const message of session?.state.messages ?? []) this.#message(message.text, message.user);
+    host.language = this.#locale;
     this.#host = host;
     this.#grant = grant;
     if (grant) {
@@ -243,7 +259,7 @@ export class NyxAssistantElement extends HTMLElement {
     try { storage = sessionStorage; } catch { /* Storage is optional for this visit. */ }
     const services = (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
     return new BrowserAuthorization({
-      language: this.lang.toLowerCase().startsWith("en") ? "en" : "zh",
+      language: this.#locale,
       base, verificationOrigin: this.dataset.verificationOrigin || base.origin, services, storage, credentialStorage,
       previousGrant: this.previousGrant, ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined, catalogServices: this.dataset.catalogServices?.split(","), clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
     });
