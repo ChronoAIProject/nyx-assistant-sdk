@@ -300,6 +300,7 @@ textarea::placeholder { color: var(--_nyx-muted); opacity: 1; }
 .voice-settings label { margin-top: .4em; display: grid; gap: .2em; }
 .voice-settings select { font: inherit; color: var(--_nyx-ink); background: var(--_nyx-paper); border: 1px solid var(--_nyx-line); border-radius: 6px; width: 100%; padding: .4em; }
 .voice-repair { display: flex; flex-wrap: wrap; align-items: center; gap: .6em; margin-top: .6em; font-size: .86em; }
+.voice-repair a { color: var(--_nyx-accent); }
 .voice-retry { padding: .3em .6em; }
 .voice-actions { display: flex; flex-wrap: wrap; gap: .45em; align-items: center; }
 .voice-actions:has(button:not([hidden])) { margin-top: .6em; }

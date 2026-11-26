@@ -45,6 +45,8 @@ export class WidgetVoice {
         <label hidden><span data-label="voiceProvider"></span><select class="voice-provider"></select></label>
       </details>
       <div class="voice-repair" hidden>
+        <a class="voice-setup" data-label="openVoiceAccess" hidden target="_blank" rel="noopener noreferrer"></a>
+        <a class="voice-key" data-label="openVoiceKey" hidden target="_blank" rel="noopener noreferrer"></a>
         <button type="button" class="voice-retry" data-label="refreshBots"></button>
       </div>
       <div class="voice-actions">
@@ -87,9 +89,19 @@ export class WidgetVoice {
   }
   #el<T extends HTMLElement = HTMLElement>(selector: string) { return this.#root.querySelector<T>(selector)!; }
   #select(selector: string) { return this.#el<HTMLSelectElement>(selector); }
-  setConnection(connection?: NyxIDConnection) {
+  setConnection(connection?: NyxIDConnection, managementUrl?: string) {
     const ended = this.reset();
     this.#connection = connection;
+    const setup = this.#el<HTMLAnchorElement>(".voice-setup");
+    const key = this.#el<HTMLAnchorElement>(".voice-key");
+    setup.hidden = key.hidden = !managementUrl;
+    if (managementUrl) {
+      setup.href = new URL("/assistant?details=grants", managementUrl).href;
+      key.href = managementUrl;
+    } else {
+      setup.removeAttribute("href");
+      key.removeAttribute("href");
+    }
     return ended;
   }
   reset() {

@@ -260,7 +260,7 @@ export class NyxAssistantElement extends HTMLElement {
     host.language = this.#locale;
     this.#host = host;
     this.#grant = grant;
-    this.#voice.setConnection(connection);
+    this.#voice.setConnection(connection, grant?.access.managementUrl);
     if (grant) {
       this.#el(".access p").textContent = grant.access.services.join(this.#text("separator"));
       this.#el<HTMLAnchorElement>(".access a").href = grant.access.managementUrl;

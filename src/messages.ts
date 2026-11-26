@@ -1,6 +1,8 @@
 export const messages = {
   zh: {
-    voiceNeedsBinding: "已获语音授权，NyxID 尚未提供可通话的 Bot。",
+    openVoiceAccess: "打开默认助手的设备语音",
+    openVoiceKey: "管理当前 Key",
+    voiceNeedsBinding: "请在默认助手的「设备语音」中启用连接，将它授予当前 Key 后刷新。",
     refreshBots: "刷新 Bot 列表",
     voiceReady: "准备通话",
     backToChat: "返回文字聊天",
@@ -99,7 +101,9 @@ export const messages = {
     saveGrantFailed: "浏览器无法保存此授权，请检查站点存储设置。",
   },
   en: {
-    voiceNeedsBinding: "Voice access is granted. NyxID has not provided a callable Bot for this key.",
+    openVoiceAccess: "Open default assistant voice settings",
+    openVoiceKey: "Manage this key",
+    voiceNeedsBinding: "Enable the connection under Device voice for your default assistant, grant it to this key, then refresh.",
     refreshBots: "Refresh Bots",
     voiceReady: "Ready to call",
     backToChat: "Back to chat",

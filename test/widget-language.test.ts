@@ -166,15 +166,22 @@ test("a catalog-only voice grant can refresh the same key and select a newly pub
   }
   const root = document.createElement("div"), toggle = document.createElement("button");
   const voice = new WidgetVoice(root, toggle, document.createElement("div"), key => key, () => {});
-  voice.setConnection(NyxIDConnection.fromAgentKey("https://relay.example", "child"));
+  const keyUrl = "https://login.example/keys/api-key/key";
+  voice.setConnection(NyxIDConnection.fromAgentKey("https://relay.example", "child"), keyUrl);
   toggle.click();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(root.querySelector(".voice-status")!.textContent, "voiceNeedsBinding");
+  const setup = root.querySelector<HTMLAnchorElement>(".voice-setup")!;
+  assert.equal(setup.href, "https://login.example/assistant?details=grants");
+  assert.equal(setup.hidden, false);
+  assert.equal(root.querySelector<HTMLAnchorElement>(".voice-key")!.href, keyUrl);
   root.querySelector<HTMLButtonElement>(".voice-retry")!.click();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(root.querySelector(".voice-name")!.textContent, "My Bot");
   assert.equal(root.querySelectorAll(".voice-bot option").length, 1);
   assert.equal(root.querySelector<HTMLElement>(".voice-repair")!.hidden, true);
   assert.equal(identities, 2);
-  await voice.reset();
+  await voice.setConnection();
+  assert.equal(setup.hidden, true);
+  assert.equal(setup.hasAttribute("href"), false);
 });
