@@ -17,13 +17,21 @@ test("renders GFM structure, code indentation, table cells and the final paragra
   assert.equal(message.lastElementChild?.textContent, "末段");
 });
 
-test("keeps HTML literal, restricts destinations and waits for a click to load media", () => {
+test("keeps HTML literal, restricts destinations and exposes images as links without loading media", () => {
   const message = renderAssistantMarkdown('<b>literal</b> [未知](custom:123) [文档](/docs) ![示意图](/diagram.png)');
   assert.ok(message.textContent.includes("<b>literal</b>"));
   assert.equal(message.querySelector("b,img"), null);
-  assert.equal(message.querySelectorAll("a").length, 1);
+  assert.equal(message.querySelectorAll("a").length, 2);
   assert.equal(message.querySelector("a")?.href, "https://host.example/docs");
   assert.match(message.querySelector("a")?.rel ?? "", /noopener/);
-  message.querySelector("button")!.click();
-  assert.equal(message.querySelector("img")?.getAttribute("src"), "https://host.example/diagram.png");
+  const imageLink = message.querySelectorAll("a")[1];
+  assert.equal(imageLink.href, "https://host.example/diagram.png");
+  assert.equal(imageLink.textContent, "示意图");
+});
+
+test("parses bold beside Chinese punctuation and keeps code literal", () => {
+  const literal = "请看**「观测指南」**和表格。";
+  const msg = renderAssistantMarkdown(literal + "\n\n`" + literal + "`");
+  assert.equal(msg.querySelector("strong")?.textContent, "「观测指南」");
+  assert.equal(msg.querySelector("code")?.textContent, literal);
 });

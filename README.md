@@ -24,7 +24,7 @@
 
 在布局容器中使用 `layout="anchored"`，入口按文字计算宽度，面板从按钮上方展开。宿主可用 `--nyx-panel-max-width` 和 `--nyx-panel-max-height` 指定可用空间。空会话仅占标题栏和输入行，消息逐条增加至高度上限后滚动。
 
-助手的最终回复支持 GitHub Flavored Markdown，包括嵌套列表、任务项、引用、删除线、代码块、链接和表格。长回复从开头阅读，宽表和长代码行可在块内横向滚动。用户输入和原始 HTML 按文字显示。外部图片由读者点击加载。自建浏览器界面可从 `@chronoai/nyx-assistant-sdk/markdown` 导入 `renderAssistantMarkdown(text)`，将返回的 `DocumentFragment` 放入消息容器。SDK 核心的 `send()` 和 `resume()` 返回原文。
+助手的最终回复支持 GitHub Flavored Markdown，包括嵌套列表、任务项、引用、删除线、代码块、链接和表格。长回复从开头阅读，宽表和长代码行可在块内横向滚动。用户输入和原始 HTML 按文字显示。外部图片显示为带替代文字的链接，点击后在新标签页打开。中文标点旁的加粗使用与 NyxID 同一项目的 CJK 扩展解析。自建浏览器界面可从 `@chronoai/nyx-assistant-sdk/markdown` 导入 `renderAssistantMarkdown(text)`，将返回的 `DocumentFragment` 放入消息容器。SDK 核心的 `send()` 和 `resume()` 返回原文。
 
 宿主可通过 CSS `::part()` 单独设置 `launcher`、`launcher-icon`、`panel`、`header`、`close`、`secondary-action`、`primary-action` 和 `input` 的样式。挂件继承页面字体。可在页面样式中设置颜色、圆角和层级，脚本的 `data-position="left"` 将入口移到左下。Enter 发送，Shift+Enter 换行，Escape 收起。收起再打开可继续原会话。
 

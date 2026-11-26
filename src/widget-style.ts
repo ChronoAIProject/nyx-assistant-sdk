@@ -179,8 +179,6 @@ p { margin: 0 0 .6em; overflow-wrap: anywhere; white-space: pre-wrap; }
 .markdown :is(th, td) { padding: .35em .6em; border: 1px solid var(--_nyx-line); overflow-wrap: normal; }
 .markdown th { background: var(--_nyx-control); }
 .markdown hr { border: 0; border-top: 1px solid var(--_nyx-line); }
-.markdown img { max-width: 100%; height: auto; }
-.markdown button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .markdown > :first-child { margin-block-start: 0; }
 .markdown > :last-child { margin-block-end: 0; }
 .controls { flex: none; padding: 8px 10px; }

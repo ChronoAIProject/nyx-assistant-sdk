@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 
 const licenses = await Promise.all(
-  ["zod", "eventsource-parser", "marked", "dompurify"].map(async (name) => {
+  ["zod", "eventsource-parser", "marked", "marked-cjk-friendly", "dompurify"].map(async (name) => {
     const file = new URL(
       "../node_modules/" + name + "/LICENSE",
       import.meta.url,
