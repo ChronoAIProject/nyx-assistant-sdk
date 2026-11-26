@@ -32,7 +32,7 @@ chrono-pr 的仓库和目标分支来自 origin。平台提供的事件或 Git �
 
 官网使用 GitHub Pages 的 GitHub Actions 发布源和 `github-pages` 环境。相关 PR 构建站点，`dev` 上影响站点的推送发布同一构建产物。需要手动重跑时，从 `dev` 运行 SDK website 工作流。
 
-本机在仓库根目录使用 Node.js 22.18 或以上版本运行 `npm ci` 和 `npm run build:site`。成功时 `site/dist` 包含 HTML、CSS、演练脚本和挂件，构建失败以非零状态退出。用静态服务器打开该目录后，可检查演练读取当前筛选、更新筛选与行数、只读时拒绝变更。公网官网的「Nyx 助手」通过生产转发服务连接 NyxID，可在同一工单表上验收真实对话。该挂件在当前页面内持有子凭据，生产服务通过 `SDK_ORIGINS` 登记 GitHub Pages 来源。[官网](https://chronoaiproject.github.io/nyx-assistant-sdk/) · [发布工作流](../.github/workflows/pages.yml)
+本机在仓库根目录使用 Node.js 22.18 或以上版本运行 `npm ci` 和 `npm run build:site`。成功时 `site/dist` 包含 HTML、CSS、演练脚本和挂件，构建失败以非零状态退出。用静态服务器打开该目录后，可检查演练读取当前筛选、更新筛选与行数、只读时拒绝变更。公网官网的「Nyx 助手」通过生产转发服务连接 NyxID，可在同一工单表上验收真实对话。该挂件默认加密保存子凭据，刷新后向 NyxID 核验并恢复登录，生产服务通过 `SDK_ORIGINS` 登记 GitHub Pages 来源。[官网](https://chronoaiproject.github.io/nyx-assistant-sdk/) · [发布工作流](../.github/workflows/pages.yml)
 
 新建 GitHub Issue 即可使用随仓路线图。默认的 Issue 和里程碑工作流跟随本仓默认分支；登记 `.chrono-harness/release.json` 的 `version` 后，路线图可按该版本归集事项。
 

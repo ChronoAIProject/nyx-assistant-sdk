@@ -104,14 +104,14 @@ export class NyxAssistantElement extends HTMLElement {
       );
     } else {
       this.#controls();
-      if (this.dataset.storage === "local") void this.#connect(true);
+      if (this.dataset.storage === undefined || this.dataset.storage === "local") void this.#connect(true);
     }
     window.addEventListener("storage", this.#storageChanged);
     window.addEventListener("pagehide", this.#pagehide);
     window.addEventListener("pageshow", this.#pageshow);
   }
   #storageChanged = (event: StorageEvent) => {
-    if (this.#persistent && (event.key === null || event.key === this.#authorization?.credentialStorageKey)) {
+    if (this.#authorization?.persistent && (event.key === null || event.key === this.#authorization.credentialStorageKey)) {
       void this.#release();
       void this.#connect(true);
     }
@@ -134,7 +134,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#revoke = undefined;
     this.#revoking = false;
     this.#clearView();
-    return (this.#persistent ? undefined : revoke?.())?.catch(() => {
+    return (this.#authorization?.persistent ? undefined : revoke?.())?.catch(() => {
       if (!this.#host)
         this.#el(".status").textContent =
           "请在 NyxID 核对浏览器子凭据的撤销状态。";
@@ -181,13 +181,12 @@ export class NyxAssistantElement extends HTMLElement {
       }),
     );
   }
-  #persistent = false;
   #createFlow() {
     const base = new URL(this.dataset.nyxid || "https://nyx.chrono-ai.fun");
     let storage: Storage | undefined;
-    let credentialStorage: Storage | undefined;
+    let credentialStorage: Storage | null | undefined;
     if (this.dataset.storage === "local") credentialStorage = localStorage;
-    this.#persistent = Boolean(credentialStorage);
+    else if (this.dataset.storage !== undefined) credentialStorage = null;
     try { storage = sessionStorage; } catch { /* Storage is optional for this visit. */ }
     const services = (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
     return new BrowserAuthorization({
@@ -216,7 +215,7 @@ export class NyxAssistantElement extends HTMLElement {
         },
       );
       if (signal.aborted) {
-        if (!this.#persistent) await grant?.revoke();
+        if (!flow.persistent) await grant?.revoke();
         return;
       }
       if (!grant) {

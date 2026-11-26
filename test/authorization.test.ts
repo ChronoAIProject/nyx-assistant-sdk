@@ -185,3 +185,28 @@ test("overlapping persistent connects share one child and disconnect is recovera
   assert.equal(local.length, 0);
   assert.deepEqual(await Promise.all([first.restore(signal), second.restore(signal)]), [undefined, undefined]);
 });
+
+test("browser defaults restore a saved grant, while memory mode and unavailable storage leave it alone", async t => {
+  const local = storage();
+  const browser = { localStorage: local, indexedDB, crypto, navigator };
+  Object.defineProperty(globalThis, "window", { configurable: true, value: browser });
+  t.after(() => Reflect.deleteProperty(globalThis, "window"));
+
+  const options = { base: "https://api.example", verificationOrigin: "https://id.example",
+    services: ["llm-nyx"], clientLabel: "Test" };
+  const flow = new BrowserAuthorization(options);
+  local.setItem(flow.credentialStorageKey, "saved-child");
+  let lookups = 0;
+  t.mock.method(globalThis, "fetch", async (_url: URL, init: RequestInit) => {
+    assert.equal(new Headers(init.headers).get("authorization"), "Bearer saved-child");
+    lookups++;
+    return Response.json(current);
+  });
+  const signal = new AbortController().signal;
+  assert.equal((await flow.restore(signal))?.keyId, "test-key");
+  assert.match(local.getItem(flow.credentialStorageKey)!, /^nyx-sealed:v1:/);
+  assert.equal(await new BrowserAuthorization({ ...options, credentialStorage: null }).restore(signal), undefined);
+  Object.defineProperty(browser, "localStorage", { get() { throw new DOMException("Blocked", "SecurityError"); } });
+  assert.equal(await new BrowserAuthorization(options).restore(signal), undefined);
+  assert.equal(lookups, 1);
+});

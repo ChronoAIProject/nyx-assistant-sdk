@@ -29,7 +29,7 @@
 | `src/markdown.ts` | 已完成的回复、Marked GFM、DOMPurify 和浏览器 DOM | 挂件与自建网页创建可阅读的消息片段 | 每条最终回复渲染一次 |
 | `test/markdown.test.ts` | 渲染模块、jsdom 与代表性 Markdown | npm test 检查结构、内容和链接/图片处理 | 未知 |
 | `src/widget-style.ts` | Shadow DOM、宿主 CSS 自定义属性 | 网页维护者调整挂件外观，用户在窄屏和键盘下操作 | 随浏览器包加载 |
-| `src/widget-auth.ts` | NyxID Agent Key 的设备授权和子凭据、Web Locks、授权存储 | 宿主和挂件按站点配置协调共享授权、恢复当前标签页申请、核验交付范围并撤销子凭据 | 持久模式同配置一次进行一项授权操作 |
+| `src/widget-auth.ts` | NyxID Agent Key 的设备授权和子凭据、Web Locks、授权存储 | 宿主和挂件默认加密保存和恢复浏览器授权，按站点配置协调共享授权、恢复当前标签页申请、核验交付范围并撤销子凭据 | 持久模式同配置一次进行一项授权操作 |
 | `browser/nyx-widget.js` | esbuild 打包挂件、样式和直接依赖 | 无构建静态网页按固定版本从 CDN 或自身站点加载 | 一个压缩脚本 |
 | `scripts/build-widget.mjs` | 浏览器入口、esbuild、依赖许可证 | 生成实际分发给静态网站的单文件脚本 | 一次本地打包 |
 | `test/authorization.test.ts` | 设备授权、有效服务、宿主身份、模拟 HTTP 和 Web Locks | Node 验证拒绝错误交付、复用原申请、并发连接共享可恢复和可撤销的子凭据 | 未知 |
