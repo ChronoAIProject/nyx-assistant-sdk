@@ -40,10 +40,19 @@ export interface BrowserAuthorizationOptions {
   clientLabel: string;
   /** Supply tab-local storage to resume a pending request after reloading. */
   storage?: Storage;
-  /** Origin-local storage for the encrypted child credential. Requires Web Locks.
+  /** Defaults to localStorage in browsers with Web Locks, IndexedDB and Web Crypto.
+   * Pass null for an in-memory login or a Storage to select the encrypted grant store.
    * The non-exportable key lives in IndexedDB. Each restored grant is checked with NyxID.
    */
-  credentialStorage?: Storage;
+  credentialStorage?: Storage | null;
+}
+
+function defaultCredentialStorage() {
+  try {
+    if (typeof window !== "undefined" && window.navigator.locks && window.crypto?.subtle && window.indexedDB) {
+      return window.localStorage;
+    }
+  } catch { /* Browser storage access can be denied for this origin. */ }
 }
 
 function sleepUntil(timestamp: number, signal: AbortSignal) {
@@ -76,6 +85,7 @@ export class BrowserAuthorization {
     this.#origin = verification.origin;
     this.#services = [...new Set(z.array(serviceSlug).min(1).parse(options.services))].sort();
     this.#options = { ...options };
+    if (options.credentialStorage === undefined) this.#options.credentialStorage = defaultCredentialStorage();
     this.#storageKey = "nyx-assistant:pending:" + JSON.stringify([
       this.#base.href, this.#origin, options.ownerId ?? null, this.#services, options.keySource ?? "existing",
     ]);
@@ -99,6 +109,10 @@ export class BrowserAuthorization {
 
   get hasSavedGrant() {
     return Boolean(this.#options.credentialStorage?.getItem(this.credentialStorageKey));
+  }
+
+  get persistent() {
+    return Boolean(this.#options.credentialStorage);
   }
 
   async #withGrantLock<T>(signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
@@ -284,6 +298,10 @@ export class BrowserAuthorization {
       return fetch(input, { ...init, credentials: "omit", headers });
     });
     const revoke = () => this.#withGrantLock(undefined, revokeChild);
-    return { connection, revoke, ownerId: key.owner_id, keyId: key.id, credentialId: parsed.data!.credential_id };
+    const access = Object.freeze({
+      services: Object.freeze([...services].sort()),
+      managementUrl: new URL("/keys/api-key/" + encodeURIComponent(key.id), this.#origin).href,
+    });
+    return { connection, revoke, access, ownerId: key.owner_id, keyId: key.id, credentialId: parsed.data!.credential_id };
   }
 }

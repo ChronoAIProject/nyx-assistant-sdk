@@ -111,6 +111,8 @@ nav a:hover, .text-link:hover { color: #fff; }
 }
 .primary { color: #171121; background: #c2afff; }
 .primary:hover { background: #d6c7ff; }
+.hero-actions [hidden] { display: none; }
+.intro #key-services { margin-top: .9rem; font-size: .9rem; overflow-wrap: anywhere; }
 .secondary { border-color: #44415a; background: #191824; }
 .secondary:hover { border-color: #9f8dd7; }
 .platforms { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem; margin-top: 1.55rem; color: #aaa6be; font-size: .78rem; }
