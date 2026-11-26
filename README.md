@@ -1,62 +1,20 @@
-# NyxID Agent 身份与 Assistant SDK
+# NyxID Assistant SDK
 
-用户在网页选择已有的 Agent Key，即可查看它的服务授权，进入 NyxID 官网调整权限，再返回刷新。网页和原生客户端也可以接入已授权的 NyxID 服务，向助手开放当前页面或窗口的操作。NyxID 管理身份、凭据、服务连接及访问范围。宿主决定可读的上下文、可执行的工具和每次执行的实际权限。服务适配器负责消息格式、会话和恢复。
+让网页或原生客户端调用用户已授权的 NyxID 服务，并向服务中的 Agent 开放当前页面或窗口的操作。NyxID 管理身份、凭据、服务连接及访问范围。宿主决定可读的上下文、可执行的工具和每次执行的实际权限。服务适配器负责消息格式、会话和恢复。
 
 首个适配器使用 Metaverse 已接通的 `llm-nyx` 服务与 `nyxagent/chat` 模型。Nyx 聊天和 CMA 都是 NyxID 服务，各自使用独立授权与会话。首版联调 Nyx 聊天。[项目目标与验收条件](https://github.com/ChronoAIProject/nyx-assistant-sdk/issues/1)
 
 SDK 官网的「Nyx 助手」可连接 NyxID，用自然语言查询或切换工单筛选。也可点击免登录演练的固定指令。两种方式都使用同一组宿主工具，开启只读模式后会拒绝写入。[SDK 官网](https://chronoaiproject.github.io/nyx-assistant-sdk/)
 
-## 以 Agent Key 登录和查看授权
-
-在同一 NyxID 实例中，一把 Agent Key 对应一个 Agent 身份。应用用 `keyId` 关联业务记录，`ownerId` 表示 Key 所属的个人或组织，`credentialId` 标识这一次登录。若应用接入多个 NyxID 实例，以可信实例和 `keyId` 共同标识 Agent。
-
-浏览器可从 `@chronoai/nyx-assistant-sdk/agent-key` 创建 `BrowserAuthorization`。设置 `services: "@key"` 后，用户在 NyxID 选择 Key 并核对它的完整授权。用 `connect(signal, showLink)` 得到 `{ identity, connection, revoke }`，直接用 `connection.requestService(...)` 调用服务。需要限定网站权限时，给 `services` 传具体 slug 数组，SDK 会核验实际交付与申请范围相符。挂件支持相同的 `data-services="@key"` 模式，登录后直接展示「已授权服务」。点击「在 NyxID 调整权限」可打开所选 Key 的官网设置页，保存后点击「刷新服务」重新读取授权。自建 UI 可直接使用登录结果的 `managementUrl`。挂件的 `nyx-ready` 事件也提供 `detail.identity` 和 `detail.managementUrl`。断开授权撤销本次登录的子凭据。
-
-### 已有登录子凭据的宿主
-
-NyxBot 或原生宿主已拿到 Agent Key 登录子凭据时，可直接核验身份。下例读取某个由应用或用户选定的工单连接。路径片段和 HTTP 方法由目标服务定义。使用本检出构建的包运行这些示例，构建和打包命令见下方「接入当前页面」。
-
-```ts
-import { NyxIDConnection } from "@chronoai/nyx-assistant-sdk";
-
-const agent = NyxIDConnection.fromAgentKey(nyxidBaseUrl, loginCredential);
-const identity = await agent.getAgentIdentity();
-const service = identity.services.find(s => s.id === selectedConnectionId);
-if (!service) throw new Error("当前 Key 没有这条连接");
-
-const reply = await agent.requestService(service, ["tickets"], { method: "GET" });
-if (!reply.ok) throw new Error(`服务返回 HTTP ${reply.status}`);
-const tickets = await reply.json();
-```
-
-`getAgentIdentity()` 调用 NyxID 的 Agent Key `self` 接口，该接口接受登录子凭据。`services` 返回 NyxID 当时列出的有效授权连接，包含各连接的启用状态。实际操作仍受 NyxID 对服务、操作、输入和凭据的实时检查。同一服务可连接多个账号，`requestService` 用服务 slug 和选中连接的 UUID 一起寻址。[NyxID 服务代理实现](https://github.com/ChronoAIProject/NyxID/blob/2a4f9cf869b6c424e6ca69ccaaf4dab52f854fac/backend/src/handlers/proxy.rs)
-
-### 让自己的服务识别 Agent
-
-已在 NyxID 的目录服务上登记为内省客户端的 HTTP 服务，可在后端验证调用者提交的 Agent Key。传入服务自身配置的签发方、内省地址、保密客户端和目录服务 ID。业务记录使用核验结果中的 `keyId`。
-
-```ts
-import { createAgentKeyVerifier } from "@chronoai/nyx-assistant-sdk/agent-verifier";
-
-const verify = createAgentKeyVerifier({
-  issuer, introspectionEndpoint, clientId, clientSecret, serviceId: catalogServiceId,
-});
-const principal = await verify(incomingBearerCredential);
-if (!principal) return new Response(null, { status: 401 });
-return Response.json({ agent: principal.keyId });
-```
-
-验证器逐次调用 NyxID 的 `/oauth/introspect`，检查有效状态、Key 类型、签发方、服务受众、有效期和 `proxy` 权限。上游不可用时抛出错误，宿主可返回 503。此接口适用于 NyxID 允许整项服务内省的普通 Agent Key；有操作、输入或审批限制的调用走 NyxID 服务代理。[NyxID 的 Agent Key 内省契约](https://github.com/ChronoAIProject/NyxID/blob/2a4f9cf869b6c424e6ca69ccaaf4dab52f854fac/backend/src/services/agent_key_introspection.rs)
-
 ## 给静态网页添加聊天挂件
 
-在 HTML 加入一行脚本，打开挂件并选择已有的 Key，即可查看已授权服务。将下例的转发服务地址替换为已登记本站来源的实例。脚本也随 npm 包提供，可复制 `browser/nyx-widget.js` 到自己的静态站点。
+在 HTML 加入一行脚本，页面会出现「Nyx 助手」按钮。脚本也随 npm 包提供，可复制 `browser/nyx-widget.js` 到自己的静态站点。
 
 ```html
-<script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.2.0-alpha.2/browser/nyx-widget.js" data-nyxid="https://sdk.example.com" data-verification-origin="https://nyxid.ai" data-services="@key"></script>
+<script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.1.0-alpha.11/browser/nyx-widget.js" data-proxy="/"></script>
 ```
 
-`data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例在配置进程凭据后使用这个模式。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。独立转发服务部署于 chrono-cd，使用 `data-nyxid` 指向服务地址，并设置 `data-verification-origin="https://nyxid.ai"`。部署方通过 `SDK_ORIGINS` 配置接入站点。挂件默认使用内存。设置 `data-storage="local"` 需要浏览器支持 Web Locks。同源标签页按站点配置依次连接并复用已保存的授权。挂件通过 Web Crypto 的 AES-GCM 加密子凭据，密文保存在站点 localStorage，不可导出的密钥存于该源的 IndexedDB。浏览器恢复时先迁移 alpha.4 的明文记录，再向 NyxID 核验。能在同源运行的脚本仍然可以使用已授权的凭据。断开授权会撤销当前子凭据并通知同源标签页。
+`data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。独立转发服务部署于 chrono-cd，使用 `data-nyxid` 指向服务地址，并设置 `data-verification-origin="https://nyxid.ai"`。部署方通过 `SDK_ORIGINS` 配置接入站点。挂件默认使用内存。设置 `data-storage="local"` 需要浏览器支持 Web Locks。同源标签页按站点配置依次连接并复用已保存的授权。挂件通过 Web Crypto 的 AES-GCM 加密子凭据，密文保存在站点 localStorage，不可导出的密钥存于该源的 IndexedDB。浏览器恢复时先迁移 alpha.4 的明文记录，再向 NyxID 核验。能在同源运行的脚本仍然可以使用已授权的凭据。断开授权会撤销当前子凭据并通知同源标签页。
 
 `data-services` 用逗号分隔此应用需要的服务，默认是 `llm-nyx,chrono-llm-public`。`data-key-source="new"` 在 NyxID 授权页预填创建专用 Key，默认预选已有 Key。批准后的实际权限由挂件按此服务列表核验。未完成的申请保存在当前标签页，刷新后点连接可以继续原申请。自有 UI 可从 `@chronoai/nyx-assistant-sdk/agent-key` 导入 `BrowserAuthorization`，传入 NyxID 的 `base`、登录页 `verificationOrigin`、`services` 和 `clientLabel`；`connect(signal, showLink)` 提供授权链接，`restore(signal)` 恢复并核验已存凭据。返回的 `connection` 可直接创建聊天适配器。
 
@@ -119,7 +77,7 @@ npm pack
 接入方也可以安装已经发布的固定版本。
 
 ```sh
-npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.2.0-alpha.2/chronoai-nyx-assistant-sdk-0.2.0-alpha.2.tgz
+npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0-alpha.11/chronoai-nyx-assistant-sdk-0.1.0-alpha.11.tgz
 ```
 
 运行端需要 Fetch、Web Streams、Web Crypto 和 AbortSignal.any。应用可以使用自己的聊天界面。
@@ -162,9 +120,7 @@ host.dispose(); // 关闭窗口、注销或切换身份时销毁该实例。
 
 ## 运行示例
 
-直接运行 `npm run example:web`，在终端给出的地址打开挂件，用已有 Key 登录、查看服务，进入 NyxID 调整权限后回到挂件刷新。开发服务器在本机转发浏览器授权请求。
-
-若要体验进程凭据代理或 macOS 聊天示例，把已有测试授权注入环境变量 `NYXID_BASE_URL` 与 `NYXID_AGENT_KEY`。测试 Key 需要能调用 `llm-nyx` 及选定模型的上游服务。网页开发服务器只绑定回环地址，将凭据保留在本机进程内。普通网页和原生示例都从仓库根目录运行。
+把已有测试授权注入环境变量 `NYXID_BASE_URL` 与 `NYXID_AGENT_KEY`。测试 Key 需要能调用 `llm-nyx` 及选定模型的上游服务。网页开发服务器只绑定回环地址，将凭据保留在本机进程内。普通网页和原生示例都从仓库根目录运行。
 
 | 宿主 | 命令 | 可观察行为 |
 |---|---|---|

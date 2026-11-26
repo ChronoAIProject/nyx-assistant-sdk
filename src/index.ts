@@ -1,6 +1,5 @@
 import { z } from "zod";
 export { z } from "zod";
-export type { AgentIdentity } from "./agent-identity.ts";
 export { NyxIDConnection } from "./connection.ts";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };

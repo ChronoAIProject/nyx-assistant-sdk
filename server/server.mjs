@@ -7,26 +7,6 @@ import { pathToFileURL } from "node:url";
 const auth = "/api/v1/auth/agent-key/";
 const responses = "/api/v1/proxy/s/llm-nyx/v1/responses";
 const allowedHeaders = ["accept", "authorization", "content-type", "idempotency-key"];
-const serviceHeaders = [...allowedHeaders, "if-match", "if-none-match"];
-
-function serviceConnection(target) {
-  // NyxID selects a UserService by its literal _nyxid_via query parameter.
-  const queryAt = target.indexOf("?");
-  if (queryAt === -1 || target.includes("#")) return;
-  const query = target.slice(queryAt + 1);
-  const ids = new URLSearchParams(query).getAll("_nyxid_via");
-  if (ids.length !== 1 || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(ids[0]) ||
-      !query.split("&").includes("_nyxid_via=" + ids[0])) return;
-  const match = /^\/api\/v1\/proxy\/s\/([a-z0-9][a-z0-9-]*)(?:\/(.*))?$/.exec(target.slice(0, queryAt));
-  if (!match) return;
-  try {
-    for (const part of (match[2] ?? "").split("/")) {
-      const decoded = decodeURIComponent(part);
-      if (decoded === "." || decoded === ".." || /[/\\%?#\u0000-\u001f\u007f]/.test(decoded)) return;
-    }
-  } catch { return; }
-  return { id: ids[0], slug: match[1] };
-}
 
 function methods(path) {
   if (path === auth + "request" || path === auth + "poll" || path === responses) return ["POST"];
@@ -98,17 +78,15 @@ function exactOrigin(input) {
   return url.origin;
 }
 
-export function sdkRequestHandler({ upstreamOrigin, origins, request = fetch }) {
+export function sdkServer({ upstreamOrigin, origins, request = fetch }) {
   const upstream = exactOrigin(upstreamOrigin);
   const allowed = new Set(origins.map(exactOrigin));
-  return async (req, res) => {
+  return createServer(async (req, res) => {
     const path = req.url;
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     if (req.method === "GET" && path === "/healthz") { res.end("ok"); return; }
-    const service = serviceConnection(path);
-    const verbs = service ? ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] : methods(path);
-    const forwardHeaders = service ? serviceHeaders : allowedHeaders;
+    const verbs = methods(path);
     if (!verbs.length) return fail(res, 404, "unknown_route");
     const origin = req.headers.origin;
     res.setHeader("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
@@ -118,8 +96,8 @@ export function sdkRequestHandler({ upstreamOrigin, origins, request = fetch }) 
     if (req.method === "OPTIONS") {
       const wanted = (req.headers["access-control-request-headers"] ?? "").toLowerCase().split(",").map(s => s.trim()).filter(Boolean);
       if (!origin || !verbs.includes(req.headers["access-control-request-method"]) ||
-          !wanted.every(header => forwardHeaders.includes(header))) return fail(res, 403, "preflight_denied");
-      res.writeHead(204, { "Access-Control-Allow-Methods": verbs.join(", "), "Access-Control-Allow-Headers": forwardHeaders.join(", ") });
+          !wanted.every(header => allowedHeaders.includes(header))) return fail(res, 403, "preflight_denied");
+      res.writeHead(204, { "Access-Control-Allow-Methods": verbs.join(", "), "Access-Control-Allow-Headers": allowedHeaders.join(", ") });
       res.end(); return;
     }
     if (!verbs.includes(req.method)) return fail(res, 405, "method_denied");
@@ -127,7 +105,7 @@ export function sdkRequestHandler({ upstreamOrigin, origins, request = fetch }) 
     const bearer = req.headers.authorization;
     if (login && bearer) return fail(res, 400, "unexpected_authorization");
     if (!login && !/^Bearer [^\s,]+$/i.test(bearer ?? "")) return fail(res, 401, "child_required");
-    if (!service && req.method === "POST" && req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") return fail(res, 415, "json_required");
+    if (req.method === "POST" && req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") return fail(res, 415, "json_required");
 
     const controller = new AbortController();
     const cancel = () => controller.abort();
@@ -135,30 +113,18 @@ export function sdkRequestHandler({ upstreamOrigin, origins, request = fetch }) 
     if (!completeTurn) res.once("close", cancel);
     const options = { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(300_000)]), redirect: "error" };
     try {
-      const hasBody = req.method === "POST" || (service && !["GET", "HEAD"].includes(req.method));
-      const body = hasBody ? await requestBody(req) : undefined;
+      const body = req.method === "POST" ? await requestBody(req) : undefined;
       if (body === null) return fail(res, 413, "request_too_large");
       const headers = new Headers();
-      for (const name of forwardHeaders) {
+      for (const name of allowedHeaders) {
         if (req.headers[name] !== undefined) headers.set(name, req.headers[name]);
       }
-      if (service || path.startsWith(responses)) {
+      if (path.startsWith(responses)) {
         const self = await request(upstream + auth + "self", { ...options, headers: { Authorization: bearer } });
         if (!self.ok) return await send(res, self, options.signal);
-        if (service) {
-          const { api_key: key } = await self.json();
-          if (!key?.scopes?.split(/\s+/).includes("proxy") ||
-              !key.effective_services?.some(s => s.id === service.id && s.is_active === true &&
-                (s.catalog_service_slug ?? s.slug) === service.slug)) {
-            return fail(res, 403, "service_denied");
-          }
-        } else await self.body?.cancel();
+        await self.body?.cancel();
       }
       const result = await request(upstream + path, { ...options, method: req.method, headers, body });
-      if (service && result.headers.has("etag")) {
-        res.setHeader("ETag", result.headers.get("etag"));
-        res.setHeader("Access-Control-Expose-Headers", "ETag");
-      }
       await send(res, result, options.signal, completeTurn);
     } catch {
       if (!res.headersSent && !res.destroyed) fail(res, 502, "nyxid_unavailable");
@@ -166,11 +132,7 @@ export function sdkRequestHandler({ upstreamOrigin, origins, request = fetch }) 
     } finally {
       res.off("close", cancel);
     }
-  };
-}
-
-export function sdkServer(options) {
-  return createServer(sdkRequestHandler(options));
+  });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -1,4 +1,3 @@
-import { agentIdentity, agentKeyResponse } from "./agent-identity.ts";
 import { NyxIDConnection } from "./connection.ts";
 import { isSealed, openCredential, sealCredential } from "./credential-storage.ts";
 import { z } from "zod";
@@ -14,6 +13,16 @@ const challenge = z.object({
 const enrollment = challenge.extend({
   expiresAt: z.number().finite(), nextPollAt: z.number().finite(),
 });
+const keySummary = z.object({
+  id: z.string().min(1), owner_id: z.string().min(1), owner_type: z.string().optional(), scopes: z.string(),
+  allow_all_services: z.literal(false), allow_auto_connected_services: z.literal(false),
+  allow_all_nodes: z.literal(false), allowed_node_ids: z.array(z.string()).length(0),
+  allowed_service_ids: z.array(z.string()).min(1),
+  effective_services: z.array(z.object({
+    id: z.string(), slug: serviceSlug, catalog_service_slug: serviceSlug.nullish(), is_active: z.literal(true),
+  })).min(1),
+});
+
 export interface PreviousGrant {
   credential: string;
   /** Remove this exact old record after encrypted storage and live verification. */
@@ -23,8 +32,7 @@ export interface BrowserAuthorizationOptions {
   previousGrant?: () => PreviousGrant | undefined;
   base: string | URL;
   verificationOrigin: string;
-  /** Explicit service slugs for a restricted grant, or the grants on the key approved at NyxID. */
-  services: readonly string[] | "@key";
+  services: readonly string[];
   keySource?: "existing" | "new";
   ownerId?: string;
   ownerType?: "personal";
@@ -36,20 +44,6 @@ export interface BrowserAuthorizationOptions {
    * The non-exportable key lives in IndexedDB. Each restored grant is checked with NyxID.
    */
   credentialStorage?: Storage;
-}
-
-function matchesRequestedServices(key: z.infer<typeof agentKeyResponse>["api_key"], requested: string[]) {
-  const rows = key.effective_services;
-  const services = new Set(rows.map(row => row.catalog_service_slug ?? row.slug));
-  const ids = new Set(rows.map(row => row.id));
-  const scopes = key.scopes.trim().split(/\s+/);
-  return !key.allow_all_services && !key.allow_auto_connected_services && !key.allow_all_nodes &&
-    key.allowed_node_ids.length === 0 &&
-    scopes.includes("proxy") && scopes.every(s => s === "proxy" || s === "read") &&
-    rows.every(s => s.is_active && serviceSlug.safeParse(s.slug).success &&
-      (s.catalog_service_slug == null || serviceSlug.safeParse(s.catalog_service_slug).success)) &&
-    services.size === requested.length && requested.every(s => services.has(s)) &&
-    ids.size === new Set(key.allowed_service_ids).size && key.allowed_service_ids.every(id => ids.has(id));
 }
 
 function sleepUntil(timestamp: number, signal: AbortSignal) {
@@ -68,7 +62,7 @@ function sleepUntil(timestamp: number, signal: AbortSignal) {
 export class BrowserAuthorization {
   readonly #base: URL;
   readonly #origin: string;
-  readonly #services: string[] | "@key";
+  readonly #services: string[];
   readonly #options: BrowserAuthorizationOptions;
   readonly #storageKey: string;
   #active?: AbortController;
@@ -80,7 +74,7 @@ export class BrowserAuthorization {
     const verification = new URL(options.verificationOrigin);
     new NyxIDConnection(verification);
     this.#origin = verification.origin;
-    this.#services = options.services === "@key" ? "@key" : [...new Set(z.array(serviceSlug).min(1).parse(options.services))].sort();
+    this.#services = [...new Set(z.array(serviceSlug).min(1).parse(options.services))].sort();
     this.#options = { ...options };
     this.#storageKey = "nyx-assistant:pending:" + JSON.stringify([
       this.#base.href, this.#origin, options.ownerId ?? null, this.#services, options.keySource ?? "existing",
@@ -212,7 +206,7 @@ export class BrowserAuthorization {
     let pending = this.#saved();
     if (!pending) {
       const reply = await this.#request("request", {
-        requested_profile: this.#services === "@key" ? undefined : "nyx-widget", client_label: this.#options.clientLabel,
+        requested_profile: "nyx-widget", client_label: this.#options.clientLabel,
         client_app: "nyx-assistant-sdk", client_form_factor: "browser",
       }, active);
       if (!reply.ok) throw Error("NyxID 授权请求失败（HTTP " + reply.status + "）。");
@@ -226,7 +220,7 @@ export class BrowserAuthorization {
     }
     url.search = new URLSearchParams({
       user_code: pending.user_code, login_type: "agent", key_source: this.#options.keySource ?? "existing",
-      ...(this.#services === "@key" ? {} : { permissions: "proxy", services: this.#services.join(",") }),
+      permissions: "proxy", services: this.#services.join(","),
     }).toString();
     active.throwIfAborted();
     const store = this.#options.storage;
@@ -262,15 +256,19 @@ export class BrowserAuthorization {
       if (!response.ok && response.status !== 401) throw Error("NyxID 未确认撤销，请重试断开授权。");
       if (record) this.#forget(record);
     };
-    const parsed = agentKeyResponse.safeParse(delivery);
+    const parsed = z.object({ credential_id: z.string().min(1), api_key: keySummary }).safeParse(delivery);
     const key = parsed.data?.api_key;
-    const identity = parsed.data && agentIdentity(parsed.data);
-    if (signal.aborted || !key || !identity || (this.#options.ownerId && key.owner_id !== this.#options.ownerId) ||
+    const services = new Set(key?.effective_services.map(row => row.catalog_service_slug ?? row.slug));
+    const ids = new Set(key?.effective_services.map(row => row.id));
+    const scopes = key?.scopes.trim().split(/\s+/) ?? [];
+    if (signal.aborted || !key || (this.#options.ownerId && key.owner_id !== this.#options.ownerId) ||
         (this.#options.ownerType && key.owner_type !== this.#options.ownerType) ||
         this.#options.catalogServices?.some(slug => !key.effective_services.some(row => row.catalog_service_slug === slug)) ||
-        (this.#services !== "@key" && !matchesRequestedServices(key, this.#services))) {
+        !scopes.includes("proxy") || scopes.some(s => s !== "proxy" && s !== "read") ||
+        services.size !== this.#services.length || this.#services.some(s => !services.has(s)) ||
+        ids.size !== new Set(key.allowed_service_ids).size || key.allowed_service_ids.some(id => !ids.has(id))) {
       await revokeChild();
-      throw Error("本次浏览器授权已撤销。请核对所选 Key、所有者和服务授权。");
+      throw Error("本次浏览器授权已撤销。请选择请求的账号、proxy 权限和页面列出的服务。");
     }
     if (!record && this.#options.credentialStorage) {
       try {
@@ -280,9 +278,12 @@ export class BrowserAuthorization {
       }
       catch { await revokeChild(); throw Error("浏览器无法保存此授权，请检查站点存储设置。"); }
     }
-    const connection = NyxIDConnection.fromAgentKey(this.#base, credential);
+    const connection = new NyxIDConnection(this.#base, (input, init) => {
+      const headers = new Headers(init?.headers);
+      headers.set("Authorization", "Bearer " + credential);
+      return fetch(input, { ...init, credentials: "omit", headers });
+    });
     const revoke = () => this.#withGrantLock(undefined, revokeChild);
-    const managementUrl = new URL("/keys/api-key/" + encodeURIComponent(key.id), this.#origin).href;
-    return { identity, connection, revoke, managementUrl, ownerId: key.owner_id, keyId: key.id, credentialId: identity.credentialId };
+    return { connection, revoke, ownerId: key.owner_id, keyId: key.id, credentialId: parsed.data!.credential_id };
   }
 }
