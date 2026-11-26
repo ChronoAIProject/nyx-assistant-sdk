@@ -6,11 +6,13 @@ import { BrowserAuthorization, type PreviousGrant } from "./widget-auth.ts";
 import { widgetStyle } from "./widget-style.ts";
 import { renderAssistantMarkdown } from "./markdown.ts";
 
+type BrowserGrant = Awaited<ReturnType<BrowserAuthorization["connect"]>>;
+
 export class NyxAssistantElement extends HTMLElement {
   #root = this.attachShadow({ mode: "open" });
   #host?: AssistantHost;
   #login?: { controller: AbortController; restoreOnly: boolean };
-  #revoke?: () => Promise<void>;
+  #grant?: BrowserGrant;
   #revoking = false;
   #authorization?: BrowserAuthorization;
   #busy = false;
@@ -21,6 +23,7 @@ export class NyxAssistantElement extends HTMLElement {
   instructions?: string;
   previousGrant?: () => PreviousGrant | undefined;
   get busy() { return this.#busy; }
+  get access() { return this.#host ? this.#grant?.access : undefined; }
   get host() {
     return this.#host;
   }
@@ -59,6 +62,7 @@ export class NyxAssistantElement extends HTMLElement {
     }
     this.#el<HTMLTextAreaElement>("textarea").placeholder = this.#text("placeholder");
     this.#el(".disconnect").textContent = this.#text(this.#login?.restoreOnly === false ? "stopApproval" : "disconnect");
+    if (this.access) this.#el(".access p").textContent = this.access.services.join(this.#text("separator"));
     this.#renderStatus();
   }
   attributeChangedCallback() { this.#renderLabels(); }
@@ -71,6 +75,8 @@ export class NyxAssistantElement extends HTMLElement {
       <section hidden id="panel" class="panel" part="panel" role="dialog" aria-labelledby="title">
         <header part="header"><h2 id="title"><span class="identity" aria-hidden="true"></span><span data-label="title"></span></h2><button class="disconnect" part="secondary-action" type="button" hidden></button>
           <button class="close" part="close" type="button" data-aria="close">×</button></header>
+        <details class="access" hidden><summary data-label="services"></summary>
+          <p></p><a target="_blank" rel="noopener noreferrer" data-label="manageAccess"></a></details>
         <div class="chat" role="log" data-aria="history" aria-live="polite"></div>
         <div class="starters" hidden><slot name="prompt"></slot></div>
         <div class="controls"><p class="status" role="status"></p>
@@ -115,7 +121,7 @@ export class NyxAssistantElement extends HTMLElement {
           !window.confirm(this.#text("resetConfirm"))) return;
       const session = this.#session;
       session.save({ messages: [] });
-      this.#bind(this.#connection, this.#revoke, session);
+      this.#bind(this.#connection, this.#grant, session);
     };
     this.#el("textarea").onkeydown = (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -141,14 +147,14 @@ export class NyxAssistantElement extends HTMLElement {
       );
     } else {
       this.#controls();
-      if (this.dataset.storage === "local") void this.#connect(true);
+      if (this.dataset.storage === undefined || this.dataset.storage === "local") void this.#connect(true);
     }
     window.addEventListener("storage", this.#storageChanged);
     window.addEventListener("pagehide", this.#pagehide);
     window.addEventListener("pageshow", this.#pageshow);
   }
   #storageChanged = (event: StorageEvent) => {
-    if (this.#persistent && (event.key === null || event.key === this.#authorization?.credentialStorageKey)) {
+    if (this.#authorization?.persistent && (event.key === null || event.key === this.#authorization.credentialStorageKey)) {
       void this.#release();
       void this.#connect(true);
     }
@@ -167,11 +173,11 @@ export class NyxAssistantElement extends HTMLElement {
     this.#release();
   }
   #release() {
-    const revoke = this.#revoking ? undefined : this.#revoke;
-    this.#revoke = undefined;
+    const revoke = this.#revoking ? undefined : this.#grant?.revoke;
+    this.#grant = undefined;
     this.#revoking = false;
     this.#clearView();
-    return (this.#persistent ? undefined : revoke?.())?.catch(() => {
+    return (this.#authorization?.persistent ? undefined : revoke?.())?.catch(() => {
       if (!this.#host)
         this.#showStatus("revocationStatus");
     });
@@ -185,6 +191,11 @@ export class NyxAssistantElement extends HTMLElement {
     this.#host?.dispose();
     this.#host = undefined;
     this.#busy = false;
+    const access = this.#el<HTMLDetailsElement>(".access");
+    access.hidden = true;
+    access.open = false;
+    this.#el(".access p").textContent = "";
+    this.#el(".access a").removeAttribute("href");
     this.#el(".chat").replaceChildren();
     this.#el<HTMLTextAreaElement>("textarea").value = "";
     this.#showStatus();
@@ -195,8 +206,9 @@ export class NyxAssistantElement extends HTMLElement {
   bind(connection: NyxIDConnection) {
     this.#bind(connection);
   }
-  #bind(connection: NyxIDConnection, revoke?: () => Promise<void>, session?: WidgetSession) {
-    void this.#release();
+  #bind(connection: NyxIDConnection, grant?: BrowserGrant, session?: WidgetSession) {
+    if (grant && grant === this.#grant) this.#clearView();
+    else void this.#release();
     this.#connection = connection;
     this.#session = session;
     const host = new AssistantHost(createNyxChatService(connection, {
@@ -207,7 +219,12 @@ export class NyxAssistantElement extends HTMLElement {
     }), () => this.context(), session?.state.conversation);
     for (const message of session?.state.messages ?? []) this.#message(message.text, message.user);
     this.#host = host;
-    this.#revoke = revoke;
+    this.#grant = grant;
+    if (grant) {
+      this.#el(".access p").textContent = grant.access.services.join(this.#text("separator"));
+      this.#el<HTMLAnchorElement>(".access a").href = grant.access.managementUrl;
+      this.#el(".access").hidden = false;
+    }
     this.#controls();
     this.dispatchEvent(
       new CustomEvent("nyx-ready", {
@@ -217,13 +234,12 @@ export class NyxAssistantElement extends HTMLElement {
       }),
     );
   }
-  #persistent = false;
   #createFlow() {
     const base = new URL(this.dataset.nyxid || "https://nyx.chrono-ai.fun");
     let storage: Storage | undefined;
-    let credentialStorage: Storage | undefined;
+    let credentialStorage: Storage | null | undefined;
     if (this.dataset.storage === "local") credentialStorage = localStorage;
-    this.#persistent = Boolean(credentialStorage);
+    else if (this.dataset.storage !== undefined) credentialStorage = null;
     try { storage = sessionStorage; } catch { /* Storage is optional for this visit. */ }
     const services = (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
     return new BrowserAuthorization({
@@ -231,8 +247,20 @@ export class NyxAssistantElement extends HTMLElement {
       previousGrant: this.previousGrant, ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined, catalogServices: this.dataset.catalogServices?.split(","), clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
     });
   }
+  /** Open the widget and start or resume its NyxID connection. */
+  connect() {
+    this.#open(true);
+    void this.#connect();
+  }
   async #connect(restoreOnly = false) {
-    if (this.#login || this.#host || this.#revoke) return;
+    if (this.#login) {
+      if (!restoreOnly && this.#login.restoreOnly) {
+        this.#login.restoreOnly = false;
+        this.#controls();
+      }
+      return;
+    }
+    if (this.#host || this.#grant) return;
     const controller = new AbortController();
     const login = { controller, restoreOnly };
     const { signal } = controller;
@@ -241,7 +269,8 @@ export class NyxAssistantElement extends HTMLElement {
     this.#showStatus("connecting");
     try {
       const flow = this.#authorization ??= this.#createFlow();
-      const grant = restoreOnly ? await flow.restore(signal) : await flow.connect(signal,
+      let grant = restoreOnly ? await flow.restore(signal) : undefined;
+      if (!grant && !login.restoreOnly && !signal.aborted) grant = await flow.connect(signal,
         (url, code) => {
           const link = this.#el<HTMLAnchorElement>(".verify");
           link.href = url.href;
@@ -251,7 +280,7 @@ export class NyxAssistantElement extends HTMLElement {
         },
       );
       if (signal.aborted) {
-        if (!this.#persistent) await grant?.revoke();
+        if (!flow.persistent) await grant?.revoke();
         return;
       }
       if (!grant) {
@@ -259,7 +288,7 @@ export class NyxAssistantElement extends HTMLElement {
         return;
       }
       const session = this.dataset.session && new WidgetSession(this.dataset.session, flow.credentialStorageKey, grant.credentialId);
-      this.#bind(grant.connection, grant.revoke, session || undefined);
+      this.#bind(grant.connection, grant, session || undefined);
       if (session && session.state.pending) {
         this.dispatchEvent(new Event("nyx-recovery"));
         if (session.state.pending.id) void this.#recover();
@@ -278,7 +307,7 @@ export class NyxAssistantElement extends HTMLElement {
     }
   }
   async #disconnect() {
-    const revoke = this.#revoke;
+    const revoke = this.#grant?.revoke;
     if (this.#revoking || (!revoke && this.#login?.restoreOnly !== false)) return;
     this.#authorization?.cancel();
     if (!revoke) {
@@ -295,9 +324,9 @@ export class NyxAssistantElement extends HTMLElement {
     } catch {
       failed = true;
     }
-    if (this.#revoke !== revoke) return;
+    if (this.#grant?.revoke !== revoke) return;
     this.#revoking = false;
-    if (!failed) this.#revoke = undefined;
+    if (!failed) this.#grant = undefined;
     this.#showStatus(failed ? "revokeFailed" : undefined);
     this.#controls();
     if (!this.#el(".panel").hidden) this.#el(failed ? ".disconnect" : ".connect").focus();
@@ -307,9 +336,9 @@ export class NyxAssistantElement extends HTMLElement {
     const pending = Boolean(this.#host?.pendingRequestId || this.#session?.state.pending);
     const waitingForApproval = this.#login?.restoreOnly === false;
     const disconnect = this.#el<HTMLButtonElement>(".disconnect");
-    this.#el(".connect").hidden = Boolean(this.#host || this.#login || this.#revoke);
+    this.#el(".connect").hidden = Boolean(this.#host || this.#login || this.#grant);
     this.#el(".connect-hint").hidden = this.#el(".connect").hidden;
-    disconnect.hidden = !this.#revoke && !waitingForApproval;
+    disconnect.hidden = !this.#grant && !waitingForApproval;
     disconnect.disabled = this.#revoking;
     disconnect.textContent = this.#text(waitingForApproval ? "stopApproval" : "disconnect");
     this.#el("form").hidden = !this.#host;
@@ -329,7 +358,7 @@ export class NyxAssistantElement extends HTMLElement {
     let focus = ".connect";
     if (this.#host) focus = "textarea";
     else if (this.#login || this.#revoking) focus = ".close";
-    else if (this.#revoke) focus = ".disconnect";
+    else if (this.#grant) focus = ".disconnect";
     this.#el(open ? focus : ".launch").focus();
   }
   #message(text: string, isUser: boolean) {
@@ -366,7 +395,7 @@ export class NyxAssistantElement extends HTMLElement {
       if (controller.signal.aborted) return;
       if (reply.type !== "answer") throw new LocalizedError("previousAction");
       session.message(reply.text, false, reply.conversationId);
-      this.#bind(this.#connection, this.#revoke, session);
+      this.#bind(this.#connection, this.#grant, session);
       this.dispatchEvent(new CustomEvent("nyx-answer", { detail: reply.text }));
     } catch (error) {
       if (!controller.signal.aborted) this.#showError(error, "recoverFailed");

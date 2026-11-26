@@ -1,5 +1,6 @@
 import { AssistantHost, z, type NyxIDService } from "../src/index.ts";
 import { mountTickets } from "../examples/web/tickets.js";
+import type { NyxAssistantElement } from "../src/widget.ts";
 
 const prompts = {
   read: { name: "read_filter", arguments: {} },
@@ -9,7 +10,25 @@ const prompts = {
 
 const labels = { all: "全部", open: "待处理", closed: "已关闭" } as const;
 const tickets = mountTickets();
-document.querySelector("nyx-assistant")!.addEventListener("nyx-ready", (event) => {
+const widget = document.querySelector<NyxAssistantElement>("nyx-assistant")!;
+const connect = document.querySelector<HTMLButtonElement>("#connect-nyxid")!;
+const manage = document.querySelector<HTMLAnchorElement>("#manage-key")!;
+const services = document.querySelector<HTMLElement>("#key-services")!;
+function renderAccess() {
+  const access = widget.access;
+  connect.hidden = Boolean(access);
+  manage.hidden = services.hidden = !access;
+  if (access) manage.href = access.managementUrl;
+  else manage.removeAttribute("href");
+  services.textContent = access ? "已授权服务 · " + access.services.join("、") : "";
+}
+widget.addEventListener("nyx-state", renderAccess);
+customElements.whenDefined("nyx-assistant").then(() => {
+  connect.disabled = false;
+  connect.onclick = () => widget.connect();
+  renderAccess();
+});
+widget.addEventListener("nyx-ready", (event) => {
   const { host, z: widgetZ } = (event as CustomEvent<{ host: AssistantHost; z: typeof z }>).detail;
   tickets.registerTools(host, widgetZ);
 });

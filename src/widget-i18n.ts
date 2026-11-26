@@ -1,5 +1,8 @@
 const zh = {
   title: "Nyx 助手",
+  services: "已授权服务",
+  manageAccess: "在 NyxID 调整权限 ↗",
+  separator: "、",
   close: "收起助手",
   history: "聊天记录",
   connectHint: "连接 NyxID 后，可以向助手提问或操作当前页面。",
@@ -56,6 +59,9 @@ const zh = {
 export type MessageKey = keyof typeof zh;
 const en: Record<MessageKey, string> = {
   title: "Nyx Assistant",
+  services: "Authorized services",
+  manageAccess: "Manage access in NyxID ↗",
+  separator: ", ",
   close: "Collapse assistant",
   history: "Chat history",
   connectHint: "Connect NyxID to ask questions or use tools provided by this page.",
