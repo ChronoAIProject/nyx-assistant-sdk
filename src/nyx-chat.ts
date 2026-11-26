@@ -35,12 +35,12 @@ export function decodeNyxReply(value: unknown, request: Pick<TurnRequest, "reque
   if (response.status !== "completed") throw new Error(`Nyx turn is ${response.status}`);
   const text = response.output
     .filter(item => item.type === "message" && item.role === "assistant")
-    .flatMap(item => (item.content ?? []).filter(part => part.type === "output_text").map(part => part.text ?? ""))
-    .join("\n").trim();
+    .map(item => (item.content ?? []).filter(part => part.type === "output_text").map(part => part.text ?? "").join(""))
+    .join("\n");
   const conversationId = response.conversation.id;
-  if (!text) throw new Error("Missing assistant message in completed response");
+  if (!text.trim()) throw new Error("Missing assistant message in completed response");
   if (!text.includes(marker)) return { type: "answer", conversationId, text };
-  const match = /(?:^|\n)```nyx-host-call[ \t]*\r?\n([^]*?)\r?\n```$/.exec(text);
+  const match = /(?:^|\n)```nyx-host-call[ \t]*\r?\n([^]*?)\r?\n```$/.exec(text.trim());
   if (!match || text.indexOf(marker) !== text.lastIndexOf(marker)) throw new Error("Malformed host tool request");
   const call = action.parse(JSON.parse(match[1]));
   if (call.requestId !== request.requestId) throw new Error("Stale host tool request");

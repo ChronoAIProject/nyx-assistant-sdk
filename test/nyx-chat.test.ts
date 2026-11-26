@@ -68,3 +68,11 @@ test("rejects a stale request token, even in a completed reply", async () => {
   )));
   await assert.rejects(h.send("hello"), /Stale host tool request/);
 });
+
+test("preserves Markdown boundaries and indentation across text parts", async () => {
+  const value = response("resp_1", "    indented code\n\n**com");
+  value.output[0].content.push({ type: "output_text", text: "plete**  \nlast line\n" });
+  const service = createNyxChatService(new NyxIDConnection("https://example.test", async () => Response.json(value)));
+  const host = new AssistantHost(service);
+  assert.equal(await host.send("read"), "    indented code\n\n**complete**  \nlast line\n");
+});

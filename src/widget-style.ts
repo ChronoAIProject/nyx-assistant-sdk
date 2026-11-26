@@ -119,7 +119,7 @@ header {
   padding: 5px 8px 5px 12px;
   border-bottom: 1px solid var(--_nyx-line);
 }
-h2 {
+header h2 {
   font-family: var(--nyx-control-font, inherit);
   font-size: 1em;
   font-weight: 650;
@@ -156,6 +156,33 @@ p { margin: 0 0 .6em; overflow-wrap: anywhere; white-space: pre-wrap; }
   padding: .35em .65em;
   margin-inline-start: auto;
 }
+/* Keep prose fluid. Only content with intrinsic columns scrolls sideways. */
+.markdown { min-width: 0; overflow-wrap: anywhere; line-height: 1.55; }
+.markdown :is(p, ul, ol, blockquote, pre, .table-scroll, hr) { margin: .65em 0; }
+.markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1em 0 .35em; color: var(--_nyx-ink); font-weight: 650; line-height: 1.3;
+}
+.markdown h1 { font-size: 1.28em; }
+.markdown h2 { font-size: 1.16em; }
+.markdown :is(h3, h4, h5, h6) { font-size: 1.04em; }
+.markdown p { white-space: normal; }
+.markdown :is(ul, ol) { padding-inline-start: 1.6em; }
+.markdown li > :is(ol, ul) { margin-block: .25em; }
+.markdown li + li { margin-block-start: .2em; }
+.markdown blockquote { border-inline-start: 2px solid var(--_nyx-line); padding-inline-start: .8em; color: var(--_nyx-muted); }
+.markdown a { color: var(--_nyx-accent); text-decoration: underline; text-underline-offset: .14em; }
+.markdown code { font: .94em/1.45 ui-monospace, monospace; background: var(--_nyx-control); border-radius: 3px; padding: .1em .28em; }
+.markdown pre, .markdown .table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.markdown pre { padding: .65em .8em; background: var(--_nyx-control); border: 1px solid var(--_nyx-line); border-radius: var(--_nyx-corner); white-space: pre; }
+.markdown pre code { background: transparent; padding: 0; }
+.markdown table { border-collapse: collapse; font-size: .94em; }
+.markdown :is(th, td) { padding: .35em .6em; border: 1px solid var(--_nyx-line); overflow-wrap: normal; }
+.markdown th { background: var(--_nyx-control); }
+.markdown hr { border: 0; border-top: 1px solid var(--_nyx-line); }
+.markdown img { max-width: 100%; height: auto; }
+.markdown button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.markdown > :first-child { margin-block-start: 0; }
+.markdown > :last-child { margin-block-end: 0; }
 .controls { flex: none; padding: 8px 10px; }
 .chat:not(:empty) ~ .controls { border-top: 1px solid var(--_nyx-line); }
 .status { font-size: .9em; color: var(--_nyx-muted); }
@@ -225,7 +252,7 @@ textarea::placeholder { color: var(--_nyx-muted); opacity: 1; }
   padding: 5px 7px 5px 12px;
   background: linear-gradient(90deg, var(--_nyx-control), transparent 85%);
 }
-:host([appearance="console"]) h2 { display: flex; align-items: center; gap: .55em; font-size: 1.02em; }
+:host([appearance="console"]) header h2 { display: flex; align-items: center; gap: .55em; font-size: 1.02em; }
 :host([appearance="console"]) .disconnect { border-color: transparent; font-weight: 500; }
 :host([appearance="console"]) .panel[data-connected] .disconnect::before {
   content: ""; display: inline-block; width: .48em; height: .48em; margin-inline-end: .48em;
@@ -241,5 +268,5 @@ textarea::placeholder { color: var(--_nyx-muted); opacity: 1; }
 :host([appearance="console"]) .send-icon { display: inline; font: 600 1.1rem/1 system-ui; }
 :host([appearance="console"]) ::slotted(button[slot="prompt"]) { border: 0; border-inline-start: 2px solid var(--_nyx-line); border-radius: 0; font-size: .89em; }
 :host([appearance="console"]) ::slotted(button[slot="prompt"]:hover) { color: var(--_nyx-accent); border-color: var(--_nyx-accent); }
-a { color: var(--_nyx-accent); display: inline-block; margin: 0 0 .5em; text-decoration: underline; }
+.verify { color: var(--_nyx-accent); display: inline-block; margin: 0 0 .5em; text-decoration: underline; }
 `;
