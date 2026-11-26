@@ -1,10 +1,11 @@
-import { AssistantHost, NyxIDConnection, z } from "./index.ts";
-import { createNyxChatService } from "./nyx-chat.ts";
+import { AssistantHost, type Json, NyxIDConnection, z } from "./index.ts";
+import { WidgetSession } from "./widget-session.ts";
+import { createNyxChatService, lookupNyxReply } from "./nyx-chat.ts";
 import { BrowserAuthorization } from "./widget-auth.ts";
 import { widgetStyle } from "./widget-style.ts";
 import { renderAssistantMarkdown } from "./markdown.ts";
 
-class NyxAssistantElement extends HTMLElement {
+export class NyxAssistantElement extends HTMLElement {
   #root = this.attachShadow({ mode: "open" });
   #host?: AssistantHost;
   #login?: { controller: AbortController; restoreOnly: boolean };
@@ -12,6 +13,12 @@ class NyxAssistantElement extends HTMLElement {
   #revoking = false;
   #authorization?: BrowserAuthorization;
   #busy = false;
+  #session?: WidgetSession;
+  #connection?: NyxIDConnection;
+  #recovery?: AbortController;
+  context: () => Json = () => ({ title: document.title, language: document.documentElement.lang });
+  instructions?: string;
+  get busy() { return this.#busy; }
   get host() {
     return this.#host;
   }
@@ -36,6 +43,7 @@ class NyxAssistantElement extends HTMLElement {
           <form part="composer" hidden><textarea rows="1" part="input" aria-label="消息" placeholder="给 Nyx 发消息…" required></textarea>
             <button class="send" part="primary-action send" type="submit" aria-label="发送"><span class="send-label">发送</span><span class="send-icon" aria-hidden="true">↑</span></button></form>
           <button class="resume" hidden type="button">核对原请求</button>
+          <button class="reset" hidden type="button">开始新对话</button>
         </div>
       </section>`;
     this.#el(".launch").onclick = () => this.#open(this.#el(".panel").hidden);
@@ -61,7 +69,15 @@ class NyxAssistantElement extends HTMLElement {
       void this.#send(false);
     };
     this.#el(".resume").onclick = () => {
-      void this.#send(true);
+      if (this.#host?.pendingRequestId) void this.#send(true);
+      else void this.#recover();
+    };
+    this.#el(".reset").onclick = () => {
+      if (!this.#session || !this.#connection || this.#busy ||
+          !window.confirm("已执行的操作仍然有效。确认已核对结果并开始新的对话？")) return;
+      const session = this.#session;
+      session.save({ messages: [] });
+      this.#bind(this.#connection, this.#revoke, session);
     };
     this.#el("textarea").onkeydown = (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -70,13 +86,17 @@ class NyxAssistantElement extends HTMLElement {
       }
     };
     this.#el(".panel").onkeydown = (e) => {
-      if (e.key === "Escape") this.#open(false);
+      if (e.key === "Escape" && this.getAttribute("layout") !== "embedded") this.#open(false);
     };
   }
   #el<T extends HTMLElement = HTMLElement>(selector: string): T {
     return this.#root.querySelector<T>(selector)!;
   }
   connectedCallback() {
+    if (this.getAttribute("layout") === "embedded") {
+      this.#el(".panel").hidden = false;
+      this.#el(".panel").setAttribute("role", "region");
+    }
     if (this.hasAttribute("data-proxy")) {
       this.bind(
         new NyxIDConnection(new URL(this.dataset.proxy || "/", location.href)),
@@ -120,6 +140,9 @@ class NyxAssistantElement extends HTMLElement {
     });
   }
   #clearView() {
+    this.#recovery?.abort();
+    this.#session = undefined;
+    this.#connection = undefined;
     this.#login?.controller.abort();
     this.#login = undefined;
     this.#host?.dispose();
@@ -135,12 +158,17 @@ class NyxAssistantElement extends HTMLElement {
   bind(connection: NyxIDConnection) {
     this.#bind(connection);
   }
-  #bind(connection: NyxIDConnection, revoke?: () => Promise<void>) {
+  #bind(connection: NyxIDConnection, revoke?: () => Promise<void>, session?: WidgetSession) {
     void this.#release();
-    const host = new AssistantHost(createNyxChatService(connection), () => ({
-      title: document.title,
-      language: document.documentElement.lang,
-    }));
+    this.#connection = connection;
+    this.#session = session;
+    const host = new AssistantHost(createNyxChatService(connection, {
+      instructions: this.instructions,
+      checkpoint: (requestId, response) => {
+        if (session && this.#session === session) session.save({ ...session.state, pending: { requestId, ...response } });
+      },
+    }), () => this.context(), session?.state.conversation);
+    for (const message of session?.state.messages ?? []) this.#message(message.text, message.user);
     this.#host = host;
     this.#revoke = revoke;
     this.#controls();
@@ -163,7 +191,7 @@ class NyxAssistantElement extends HTMLElement {
     const services = (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
     return new BrowserAuthorization({
       base, verificationOrigin: this.dataset.verificationOrigin || base.origin, services, storage, credentialStorage,
-      clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
+      ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined, catalogServices: this.dataset.catalogServices?.split(","), clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
     });
   }
   async #connect(restoreOnly = false) {
@@ -194,7 +222,13 @@ class NyxAssistantElement extends HTMLElement {
         this.#el(".status").textContent = "";
         return;
       }
-      this.#bind(grant.connection, grant.revoke);
+      const session = this.dataset.session && new WidgetSession(this.dataset.session, flow.credentialStorageKey, grant.credentialId);
+      this.#bind(grant.connection, grant.revoke, session || undefined);
+      if (session && session.state.pending) {
+        this.dispatchEvent(new Event("nyx-recovery"));
+        if (session.state.pending.id) void this.#recover();
+        else this.#el(".status").textContent = "原请求未取得响应编号，请先核对操作结果。";
+      }
       if (!this.#el(".panel").hidden) this.#el("textarea").focus();
     } catch (error) {
       if (!signal.aborted)
@@ -234,7 +268,8 @@ class NyxAssistantElement extends HTMLElement {
     if (!this.#el(".panel").hidden) this.#el(failed ? ".disconnect" : ".connect").focus();
   }
   #controls() {
-    const pending = Boolean(this.#host?.pendingRequestId);
+    this.dispatchEvent(new Event("nyx-state"));
+    const pending = Boolean(this.#host?.pendingRequestId || this.#session?.state.pending);
     const waitingForApproval = this.#login?.restoreOnly === false;
     const disconnect = this.#el<HTMLButtonElement>(".disconnect");
     this.#el(".connect").hidden = Boolean(this.#host || this.#login || this.#revoke);
@@ -248,7 +283,8 @@ class NyxAssistantElement extends HTMLElement {
       this.#el(".chat").childElementCount > 0 ||
       !this.#el<HTMLSlotElement>('slot[name="prompt"]').assignedElements().length;
     this.#el<HTMLButtonElement>(".send").disabled = this.#busy || pending;
-    this.#el(".resume").hidden = this.#busy || !pending;
+    this.#el(".resume").hidden = this.#busy || !(this.#host?.pendingRequestId || this.#session?.state.pending?.id);
+    this.#el(".reset").hidden = this.#busy || !this.#session?.state.messages.length;
   }
   #open(open: boolean) {
     this.#el(".panel").hidden = !open;
@@ -282,14 +318,44 @@ class NyxAssistantElement extends HTMLElement {
     if (isUser) chat.scrollTop = chat.scrollHeight;
     else if (follow) chat.scrollTop += message.getBoundingClientRect().top - chat.getBoundingClientRect().top;
   }
-  async #send(resume: boolean) {
+  async #recover() {
+    const session = this.#session, pending = session?.state.pending;
+    if (this.#busy || !this.#connection || !session || !pending?.id || !pending.conversationId) return;
+    const controller = new AbortController();
+    this.#recovery = controller;
+    this.#busy = true;
+    this.#controls();
+    try {
+      const reply = await lookupNyxReply(this.#connection, pending, { id: pending.id, conversationId: pending.conversationId }, controller.signal);
+      if (controller.signal.aborted) return;
+      if (reply.type !== "answer") throw Error("原窗口收到过页面操作。请核对后开始新对话。");
+      session.message(reply.text, false, reply.conversationId);
+      this.#bind(this.#connection, this.#revoke, session);
+    } catch (error) {
+      if (!controller.signal.aborted) this.#el(".status").textContent = error instanceof Error ? error.message : "无法核对原请求。";
+    } finally {
+      if (this.#session === session) { this.#busy = false; this.#controls(); }
+    }
+  }
+  /** Use the same composer and transcript for an explicit host action. */
+  sendMessage(text: string) {
+    return this.#send(false, text);
+  }
+  async #send(resume: boolean, supplied?: string) {
     const host = this.#host,
       input = this.#el<HTMLTextAreaElement>("textarea");
     if (!host || this.#busy || Boolean(host.pendingRequestId) !== resume)
       return;
-    const text = input.value.trim();
+    const text = (supplied ?? input.value).trim();
+    if (!resume && this.#session?.state.pending) return;
     if (!resume) {
       if (!text) return;
+      try {
+        this.#session?.message(text, true, host.conversationId);
+      } catch {
+        this.#el(".status").textContent = "无法保存聊天记录，请检查站点存储。";
+        return;
+      }
       this.#message(text, true);
       input.value = "";
     }
@@ -302,7 +368,9 @@ class NyxAssistantElement extends HTMLElement {
       const answer = await (resume ? host.resume() : host.send(text));
       if (host !== this.#host) return;
       this.#el(".status").textContent = "";
+      this.#session?.message(answer, false, host.conversationId);
       this.#message(answer, false);
+      this.dispatchEvent(new CustomEvent("nyx-answer", { detail: answer }));
     } catch (error) {
       if (host === this.#host)
         this.#el(".status").textContent =
@@ -314,23 +382,4 @@ class NyxAssistantElement extends HTMLElement {
       }
     }
   }
-}
-
-const script = document.currentScript as HTMLScriptElement | null;
-function mount() {
-  if (document.querySelector("nyx-assistant")) return;
-  const widget = document.createElement("nyx-assistant");
-  for (const name of ["data-nyxid", "data-verification-origin", "data-proxy", "data-services", "data-key-source", "data-storage"]) {
-    if (script?.hasAttribute(name))
-      widget.setAttribute(name, script.getAttribute(name)!);
-  }
-  if (script?.dataset.position === "left")
-    widget.setAttribute("position", "left");
-  document.body.append(widget);
-}
-if (!customElements.get("nyx-assistant")) {
-  customElements.define("nyx-assistant", NyxAssistantElement);
-  if (document.readyState === "loading")
-    document.addEventListener("DOMContentLoaded", mount, { once: true });
-  else mount();
 }

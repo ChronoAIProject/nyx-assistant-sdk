@@ -11,7 +11,7 @@ const licenses = await Promise.all(
   }),
 );
 await build({
-  entryPoints: ["src/widget.ts"],
+  entryPoints: ["src/widget-script.ts"],
   outfile: "browser/nyx-widget.js",
   bundle: true,
   format: "iife",

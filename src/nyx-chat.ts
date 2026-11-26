@@ -54,26 +54,32 @@ export function decodeNyxReply(value: unknown, request: Pick<TurnRequest, "reque
   return { type: "call", conversationId, callId: response.id, name: call.name, arguments: call.arguments };
 }
 
+type ResponseIdentity = { id: string; conversationId: string };
+export async function lookupNyxReply(connection: NyxIDConnection, turn: Pick<TurnRequest, "requestId" | "conversationId">, prior: ResponseIdentity, signal: AbortSignal) {
+  const res = await connection.request("llm-nyx", ["v1", "responses", prior.id], { signal, cache: "no-store", redirect: "error" });
+  if (!res.ok) throw new Error(`NyxID response lookup returned HTTP ${res.status}`);
+  const original = storedResponse.parse(await res.json());
+  if (original.id !== prior.id || original.conversation.id !== prior.conversationId) throw new Error("NyxID lookup identity changed");
+  return decodeNyxReply(original, turn);
+}
+
 /** Bind one adapter to one NyxID identity for the life of a host. */
-export function createNyxChatService(connection: NyxIDConnection): NyxIDService {
+export function createNyxChatService(connection: NyxIDConnection, options: { instructions?: string; checkpoint?: (requestId: string, response?: ResponseIdentity) => void } = {}): NyxIDService {
   const observed = new Map<string, { id: string; conversationId: string }>();
   return {
     async turn(turn, signal, onText) {
       const prior = observed.get(turn.requestId);
       if (prior) {
-        const res = await connection.request("llm-nyx", ["v1", "responses", prior.id], { signal, cache: "no-store", redirect: "error" });
-        if (!res.ok) throw new Error(`NyxID response lookup returned HTTP ${res.status}`);
-        const original = storedResponse.parse(await res.json());
-        if (original.id !== prior.id || original.conversation.id !== prior.conversationId) throw new Error("NyxID lookup identity changed");
-        const reply = decodeNyxReply(original, turn);
+        const reply = await lookupNyxReply(connection, turn, prior, signal);
         observed.delete(turn.requestId);
         return reply;
       }
+      options.checkpoint?.(turn.requestId);
       const res = await connection.request("llm-nyx", ["v1", "responses"], {
         method: "POST", signal, redirect: "error", cache: "no-store",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream", "Idempotency-Key": turn.requestId },
         body: JSON.stringify({
-          model: "nyxagent/chat", instructions: nyxHostInstructions, store: true, stream: true,
+          model: "nyxagent/chat", instructions: [nyxHostInstructions, options.instructions].filter(Boolean).join("\n"), store: true, stream: true,
           input: JSON.stringify(turn), ...(turn.conversationId ? { conversation: turn.conversationId } : {}),
         }),
       });
@@ -82,6 +88,7 @@ export function createNyxChatService(connection: NyxIDConnection): NyxIDService 
       if (!res.body || !res.headers.get("content-type")?.startsWith("text/event-stream")) throw new Error("Expected NyxID response stream");
       let reply: ServiceReply | undefined;
       const parser = createParser({ onEvent(event) {
+        signal.throwIfAborted();
         if (event.data === "[DONE]" || reply) return;
         const frame = JSON.parse(event.data);
         const type = frame.type ?? event.event;
@@ -92,7 +99,10 @@ export function createNyxChatService(connection: NyxIDConnection): NyxIDService 
           if ((turn.conversationId && conversation.id !== turn.conversationId) || (seen && (id !== seen.id || conversation.id !== seen.conversationId))) {
             throw new Error("NyxID stream identity changed");
           }
-          observed.set(turn.requestId, { id, conversationId: conversation.id });
+          if (!seen) {
+            observed.set(turn.requestId, { id, conversationId: conversation.id });
+            options.checkpoint?.(turn.requestId, { id, conversationId: conversation.id });
+          }
           if (type === "response.failed") throw new Error("NyxID reported a failed turn");
           if (type === "response.completed") reply = decodeNyxReply(frame.response, turn);
         }

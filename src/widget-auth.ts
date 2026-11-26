@@ -14,7 +14,7 @@ const enrollment = challenge.extend({
   expiresAt: z.number().finite(), nextPollAt: z.number().finite(),
 });
 const keySummary = z.object({
-  id: z.string().min(1), owner_id: z.string().min(1), scopes: z.string(),
+  id: z.string().min(1), owner_id: z.string().min(1), owner_type: z.string().optional(), scopes: z.string(),
   allow_all_services: z.literal(false), allow_auto_connected_services: z.literal(false),
   allow_all_nodes: z.literal(false), allowed_node_ids: z.array(z.string()).length(0),
   allowed_service_ids: z.array(z.string()).min(1),
@@ -29,6 +29,8 @@ export interface BrowserAuthorizationOptions {
   services: readonly string[];
   keySource?: "existing" | "new";
   ownerId?: string;
+  ownerType?: "personal";
+  catalogServices?: readonly string[];
   clientLabel: string;
   /** Supply tab-local storage to resume a pending request after reloading. */
   storage?: Storage;
@@ -238,6 +240,8 @@ export class BrowserAuthorization {
     const ids = new Set(key?.effective_services.map(row => row.id));
     const scopes = key?.scopes.trim().split(/\s+/) ?? [];
     if (signal.aborted || !key || (this.#options.ownerId && key.owner_id !== this.#options.ownerId) ||
+        (this.#options.ownerType && key.owner_type !== this.#options.ownerType) ||
+        this.#options.catalogServices?.some(slug => !key.effective_services.some(row => row.catalog_service_slug === slug)) ||
         !scopes.includes("proxy") || scopes.some(s => s !== "proxy" && s !== "read") ||
         services.size !== this.#services.length || this.#services.some(s => !services.has(s)) ||
         ids.size !== new Set(key.allowed_service_ids).size || key.allowed_service_ids.some(id => !ids.has(id))) {
@@ -258,6 +262,6 @@ export class BrowserAuthorization {
       return fetch(input, { ...init, credentials: "omit", headers });
     });
     const revoke = () => this.#withGrantLock(undefined, revokeChild);
-    return { connection, revoke, ownerId: key.owner_id, keyId: key.id };
+    return { connection, revoke, ownerId: key.owner_id, keyId: key.id, credentialId: parsed.data!.credential_id };
   }
 }

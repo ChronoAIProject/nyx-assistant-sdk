@@ -266,5 +266,12 @@ textarea::placeholder { color: var(--_nyx-muted); opacity: 1; }
 :host([appearance="console"]) .send-icon { display: inline; font: 600 1.1rem/1 system-ui; }
 :host([appearance="console"]) ::slotted(button[slot="prompt"]) { border: 0; border-inline-start: 2px solid var(--_nyx-line); border-radius: 0; font-size: .89em; }
 :host([appearance="console"]) ::slotted(button[slot="prompt"]:hover) { color: var(--_nyx-accent); border-color: var(--_nyx-accent); }
+:host([layout="embedded"]) { position: relative; inset: auto; z-index: auto; display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
+:host([layout="embedded"]) .panel { flex: 1; width: 100%; max-height: none; min-height: 0; border: 0; border-radius: 0; box-shadow: none; }
+:host([layout="embedded"]) :is(.launch, .close, header h2) { display: none; }
+:host([layout="embedded"]) header { justify-content: flex-end; }
+:host([layout="embedded"]) header:has(.disconnect[hidden]) { display: none; }
+:host([layout="embedded"]) .chat { flex: 1 1 auto; }
+:host([layout="embedded"]) .controls { margin-top: auto; }
 .verify { color: var(--_nyx-accent); display: inline-block; margin: 0 0 .5em; text-decoration: underline; }
 `;
