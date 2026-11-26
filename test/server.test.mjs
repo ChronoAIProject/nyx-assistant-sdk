@@ -147,3 +147,31 @@ test("browser voice uses a fixed upstream and authenticates the stream with the 
   ws.close();
   await once(ws, "close");
 });
+
+test("temporary voice forwards SDP only to the selected OpenAI connection", async t => {
+  const requests = [];
+  const server = sdkServer({ upstreamOrigin: "https://id.example", origins: [], request: async (url, options) => {
+    requests.push({ url, options });
+    return new Response(url.endsWith("/self") ? "{}" : "v=0", { headers: { "Content-Type": "application/sdp" } });
+  } });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = "http://127.0.0.1:" + server.address().port;
+  const path = "/api/v1/proxy/s/llm-openai/realtime/calls";
+  const query = "?_nyxid_via=22caf9db-4c7d-4712-89e8-09c96c58489b";
+  const form = new FormData();
+  form.set("sdp", "v=0");
+  const post = { method: "POST", headers: { Authorization: "Bearer child" }, body: form };
+  for (const target of [path, path + query + "&model=other", path + "?_nyxid_via=unknown"]) {
+    assert.equal((await fetch(base + target, post)).status, 404);
+  }
+  assert.equal((await fetch(base + path + query, { method: "POST", body: form })).status, 401);
+  assert.equal((await fetch(base + path + query, { ...post, body: "{}" })).status, 415);
+  assert.equal(requests.length, 0);
+  const answer = await fetch(base + path + query, post);
+  assert.equal(await answer.text(), "v=0");
+  assert.deepEqual(requests.map(r => r.url), ["https://id.example/api/v1/auth/agent-key/self", "https://id.example" + path + query]);
+  assert.match(requests[1].options.headers.get("content-type"), /^multipart\/form-data; boundary=/);
+  assert.match(requests[1].options.body.toString(), /name="sdp"/);
+});

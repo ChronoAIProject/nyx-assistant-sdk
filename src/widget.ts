@@ -118,7 +118,7 @@ export class NyxAssistantElement extends HTMLElement {
           <button class="reset" hidden type="button" data-label="reset"></button>
         </div>
       </section>`;
-    this.#voice = new WidgetVoice(this.#el(".voice"), this.#el(".voice-toggle"), this.#el(".chat"), key => this.#text(key), () => this.#controls());
+    this.#voice = new WidgetVoice(this.#el(".voice"), this.#el(".voice-toggle"), this.#el(".chat"), (key, value) => this.#text(key, value), () => this.#controls());
     this.#renderLabels();
     this.#el(".launch").onclick = () => this.#open(this.#el(".panel").hidden);
     const prompts = this.#el<HTMLSlotElement>('slot[name="prompt"]');
@@ -282,8 +282,10 @@ export class NyxAssistantElement extends HTMLElement {
     else if (this.dataset.storage !== undefined) credentialStorage = null;
     try { storage = sessionStorage; } catch { /* Storage is optional for this visit. */ }
     const requested = this.dataset.services ?? "llm-nyx,chrono-llm-public";
-    const services = requested === "@key" ? "@key" : requested.split(",").map(s => s.trim()).filter(s => s !== "nyxbot-voice");
-    if (services !== "@key" && this.voiceEnabled) services.push("nyxbot-voice");
+    const base = requested.split(",").map(s => s.trim()).filter(Boolean);
+    const botVoice = base.includes("nyxbot-voice");
+    const services = requested === "@key" ? "@key" : base.filter(s => s !== "nyxbot-voice");
+    if (services !== "@key" && this.voiceEnabled) services.push(botVoice ? "nyxbot-voice" : "llm-openai");
     return new BrowserAuthorization({
       language: this.#locale,
       base: this.dataset.nyxid, verificationOrigin: this.dataset.verificationOrigin,
@@ -291,7 +293,8 @@ export class NyxAssistantElement extends HTMLElement {
       previousGrant: this.previousGrant,
       ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined,
       catalogServices: this.dataset.catalogServices?.split(","),
-      clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
+      clientLabel: location.hostname,
+      keySource: (this.dataset.keySource ?? (services === "@key" ? "existing" : "new")) === "new" ? "new" : "existing",
     });
   }
   /** Open the widget and start or resume its NyxID connection. */
@@ -341,7 +344,7 @@ export class NyxAssistantElement extends HTMLElement {
         if (session.state.pending.id) void this.#recover();
         else this.#showStatus("missingResponse");
       }
-      if (!this.#el(".panel").hidden) this.#el("textarea").focus();
+      if (!this.#el(".panel").hidden) this.#el(this.#el("textarea").hidden ? ".voice-toggle" : "textarea").focus();
     } catch (error) {
       if (!signal.aborted)
         this.#showError(error, "connectFailed");
@@ -385,7 +388,11 @@ export class NyxAssistantElement extends HTMLElement {
     const waitingForApproval = this.#login?.restoreOnly === false;
     const disconnect = this.#el<HTMLButtonElement>(".disconnect");
     this.#el(".connect").hidden = Boolean(this.#host || this.#login || this.#grant);
-    const hasDraft = Boolean(this.#el<HTMLTextAreaElement>("textarea").value.trim());
+    const textarea = this.#el<HTMLTextAreaElement>("textarea");
+    const voiceOnly = this.voiceEnabled && this.#grant?.access.services.length === 1 &&
+      ["llm-openai", "nyxbot-voice"].includes(this.#grant.access.services[0]!);
+    textarea.hidden = Boolean(voiceOnly);
+    const hasDraft = !voiceOnly && Boolean(textarea.value.trim());
     const offerVoice = this.voiceEnabled && !hasDraft && !this.#busy && !pending;
     this.#el(".voice-toggle").hidden = !offerVoice;
     this.#el(".send").hidden = offerVoice;
@@ -396,7 +403,7 @@ export class NyxAssistantElement extends HTMLElement {
     disconnect.textContent = this.#text(waitingForApproval ? "cancelApproval" : "disconnect");
     this.#el("form").hidden = !this.#host || this.#voice.open;
     this.#el(".panel").toggleAttribute("data-connected", Boolean(this.#host));
-    this.#el(".starters").hidden = !this.#host || this.#voice.open || this.#busy || pending ||
+    this.#el(".starters").hidden = !!voiceOnly || !this.#host || this.#voice.open || this.#busy || pending ||
       this.#el(".chat").childElementCount > 0 ||
       !this.#el<HTMLSlotElement>('slot[name="prompt"]').assignedElements().length;
     this.#el<HTMLButtonElement>(".send").disabled = this.#busy || pending;
@@ -409,7 +416,7 @@ export class NyxAssistantElement extends HTMLElement {
     launch.hidden = open && this.getAttribute("layout") !== "anchored";
     launch.setAttribute("aria-expanded", String(open));
     let focus = ".connect";
-    if (this.#host) focus = "textarea";
+    if (this.#host) focus = this.#el("textarea").hidden ? ".voice-toggle" : "textarea";
     else if (this.#login || this.#revoking) focus = ".close";
     else if (this.#grant) focus = ".disconnect";
     this.#el(open ? focus : ".launch").focus();

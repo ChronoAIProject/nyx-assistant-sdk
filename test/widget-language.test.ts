@@ -92,10 +92,10 @@ for (const voiceEnabled of [true, false]) {
   test(`widget requests configured chat and voice services together (voice=${voiceEnabled})`, async t => {
     const widget = new NyxAssistantElement();
     widget.dataset.storage = "memory";
-    widget.dataset.keySource = "new";
+    if (!voiceEnabled) widget.dataset.keySource = "new";
     if (!voiceEnabled) widget.dataset.voice = "false";
     const services = ["chrono-llm-public", "llm-nyx"];
-    if (voiceEnabled) services.push("nyxbot-voice");
+    if (voiceEnabled) services.push("llm-openai");
     let requests = 0;
     t.mock.method(globalThis, "fetch", async (input: URL, init: RequestInit) => {
       assert.equal(input.origin, "https://nyx-assistant-sdk-chronoai.apps.nyxid.ai");

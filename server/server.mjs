@@ -10,7 +10,10 @@ const auth = "/api/v1/auth/agent-key/";
 const responses = "/api/v1/proxy/s/llm-nyx/v1/responses";
 const allowedHeaders = ["accept", "authorization", "content-type", "idempotency-key"];
 
+const realtimeCall = /^\/api\/v1\/proxy\/s\/llm-openai\/realtime\/calls\?_nyxid_via=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
 function methods(path) {
+  if (realtimeCall.test(path)) return ["POST"];
   if (path === auth + "request" || path === auth + "poll" || path === responses) return ["POST"];
   if (path === auth + "self") return ["GET", "DELETE"];
   if (path.startsWith(responses + "/") && /^[A-Za-z0-9_-]{1,256}$/.test(path.slice(responses.length + 1))) return ["GET"];
@@ -107,7 +110,12 @@ export function sdkServer({ upstreamOrigin, origins, request = fetch }) {
     const bearer = req.headers.authorization;
     if (login && bearer) return fail(res, 400, "unexpected_authorization");
     if (!login && !/^Bearer [^\s,]+$/i.test(bearer ?? "")) return fail(res, 401, "child_required");
-    if (req.method === "POST" && req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") return fail(res, 415, "json_required");
+    if (req.method === "POST") {
+      const mime = req.headers["content-type"]?.split(";")[0].trim().toLowerCase();
+      if (realtimeCall.test(path)) {
+        if (mime !== "multipart/form-data") return fail(res, 415, "multipart_required");
+      } else if (mime !== "application/json") return fail(res, 415, "json_required");
+    }
 
     const controller = new AbortController();
     const cancel = () => controller.abort();

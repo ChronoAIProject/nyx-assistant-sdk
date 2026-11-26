@@ -2,12 +2,14 @@ import type { NyxIDConnection } from "./connection.ts";
 import type { AgentIdentity } from "./agent-identity.ts";
 import { LocalizedError, type MessageKey } from "./i18n.ts";
 import { VoiceClient, VoiceConnectionUnavailable, type VoiceAgent, type VoiceOption, type VoiceOptions } from "./voice.ts";
+import { TemporaryCall } from "./temporary-call.ts";
 import { WidgetCall } from "./widget-call.ts";
 
 type Service = AgentIdentity["services"][number];
 export class WidgetVoice {
   #root: HTMLElement;
-  #call?: WidgetCall;
+  #call?: TemporaryCall | WidgetCall;
+  #temporary: Service[] = [];
   #load?: AbortController;
   #connection?: NyxIDConnection;
   #bots: { service: Service; agent: VoiceAgent }[] = [];
@@ -15,7 +17,8 @@ export class WidgetVoice {
   #choices?: VoiceOptions;
   #status?: MessageKey;
   #detail = "";
-  #text: (key: MessageKey) => string;
+  #statusValue = "";
+  #text: (key: MessageKey, value?: string) => string;
   #visible = false;
   #ending?: Promise<void>;
   #toggle: HTMLButtonElement;
@@ -27,7 +30,7 @@ export class WidgetVoice {
   #muted = false;
   get open() { return this.#visible; }
 
-  constructor(root: HTMLElement, toggle: HTMLButtonElement, chat: HTMLElement, text: (key: MessageKey) => string, changed: () => void) {
+  constructor(root: HTMLElement, toggle: HTMLButtonElement, chat: HTMLElement, text: (key: MessageKey, value?: string) => string, changed: () => void) {
     this.#root = root;
     this.#toggle = toggle;
     this.#chat = chat;
@@ -80,12 +83,15 @@ export class WidgetVoice {
     this.#el(".voice-start").onclick = () => void this.#start();
     this.#el(".voice-end").onclick = () => void this.#finish();
     const talk = this.#el<HTMLButtonElement>(".voice-talk");
-    talk.onpointerdown = event => { talk.setPointerCapture(event.pointerId); this.#call?.talk(true); };
-    talk.onpointerup = talk.onlostpointercapture = talk.onpointercancel = talk.onblur = () => this.#call?.talk(false);
+    talk.onpointerdown = event => { talk.setPointerCapture(event.pointerId); this.#talk(true); };
+    talk.onpointerup = talk.onlostpointercapture = talk.onpointercancel = talk.onblur = () => this.#talk(false);
     talk.onkeydown = event => {
-      if (event.key === " " || event.key === "Enter") { event.preventDefault(); this.#call?.talk(true); }
+      if (event.key === " " || event.key === "Enter") { event.preventDefault(); this.#talk(true); }
     };
-    talk.onkeyup = () => this.#call?.talk(false);
+    talk.onkeyup = () => this.#talk(false);
+  }
+  #talk(pressed: boolean) {
+    if (this.#call instanceof WidgetCall) this.#call.talk(pressed);
   }
   #el<T extends HTMLElement = HTMLElement>(selector: string) { return this.#root.querySelector<T>(selector)!; }
   #select(selector: string) { return this.#el<HTMLSelectElement>(selector); }
@@ -109,6 +115,7 @@ export class WidgetVoice {
     this.#load = undefined;
     const ending = this.#finish();
     this.#visible = false;
+    this.#temporary = [];
     this.#agent = this.#choices = undefined;
     this.#toggle.setAttribute("aria-expanded", "false");
     this.#el<HTMLDetailsElement>(".voice-settings").open = false;
@@ -119,13 +126,18 @@ export class WidgetVoice {
     this.#setStatus();
     return ending;
   }
-  #setStatus(key?: MessageKey, detail = "") { this.#status = key; this.#detail = detail; this.localize(); }
+  #setStatus(key?: MessageKey, detail = "", value = "") {
+    this.#status = key;
+    this.#detail = detail;
+    this.#statusValue = value;
+    this.localize();
+  }
   localize() {
     this.#el(".voice-mute").textContent = this.#text(this.#muted ? "voiceUnmute" : "voiceMute");
-    this.#el(".voice-status").textContent = this.#status ? [this.#text(this.#status), this.#detail].filter(Boolean).join(" ") : "";
+    this.#el(".voice-status").textContent = this.#status ? [this.#text(this.#status, this.#statusValue), this.#detail].filter(Boolean).join(" ") : "";
   }
   #error(error: unknown) {
-    if (error instanceof LocalizedError) this.#setStatus(error.key);
+    if (error instanceof LocalizedError) this.#setStatus(error.key, "", error.value);
     else if (error instanceof DOMException && error.name === "NotAllowedError") this.#setStatus("microphoneDenied");
     else this.#setStatus("voiceFailed", error instanceof Error ? error.message : "");
   }
@@ -142,11 +154,27 @@ export class WidgetVoice {
     const signal = this.#loading();
     this.#el(".voice-repair").hidden = this.#el(".voice-settings").hidden = true;
     this.#bots = [];
+    this.#temporary = [];
     try {
       if (!this.#connection!.hasAgentKey) throw new LocalizedError("voiceProxy");
       const connection = this.#connection!;
       const identity = await connection.getAgentIdentity(signal);
       const services = identity.services.filter(s => s.active && (s.catalogSlug ?? s.slug) === "nyxbot-voice");
+      if (!services.length) {
+        this.#temporary = identity.services.filter(s => s.active && (s.catalogSlug ?? s.slug) === "llm-openai");
+        if (this.#temporary.length) {
+          this.#el(".voice-name").textContent = this.#text("temporaryVoice");
+          const select = this.#select(".voice-provider");
+          select.replaceChildren(...this.#temporary.map(s => new Option(s.label + " · " + s.id.slice(0, 8), s.id)));
+          if (this.#temporary.length === 1) { await this.#start(); return; }
+          select.prepend(new Option(this.#text("voiceProvider"), ""));
+          select.value = "";
+          select.parentElement!.hidden = this.#el(".voice-settings").hidden = false;
+          this.#el<HTMLDetailsElement>(".voice-settings").open = true;
+          this.#ready();
+          return;
+        }
+      }
       const bots = [];
       for (const service of services) {
         signal.throwIfAborted();
@@ -161,6 +189,7 @@ export class WidgetVoice {
       this.#bots = bots;
       if (!bots.length) {
         this.#el(".voice-repair").hidden = false;
+        if (!services.length) this.#el(".voice-setup").hidden = true;
         throw new LocalizedError(services.length ? "voiceNeedsBinding" : "voiceNoBot");
       }
       const bot = this.#select(".voice-bot");
@@ -214,43 +243,51 @@ export class WidgetVoice {
     return this.#choices?.options[select.selectedIndex];
   }
   #ready() {
-    const ready = Boolean(this.#option());
+    const ready = Boolean(this.#option() || this.#temporary.some(s => s.id === this.#select(".voice-provider").value));
     this.#el(".voice-start").hidden = !ready;
     this.#setStatus(ready ? "voiceReady" : "voiceNoProvider");
   }
   async #start() {
-    const option = this.#option(), service = this.#selectedBot()?.service;
-    if (!option || !service || !this.#agent || this.#call || this.#ending) return;
+    if (this.#call || this.#ending) return;
+    const selected = this.#temporary.find(s => s.id === this.#select(".voice-provider").value);
+    const option = this.#option(), bot = this.#selectedBot(), agent = this.#agent;
+    if (!selected && (!option || !bot || !agent)) return;
     this.#captions.clear();
     this.#startedAt = 0;
     this.#muted = false;
-    const pcm = option.voice?.protocol === "xai_realtime";
-    const call = this.#call = new WidgetCall(this.#connection!, service, snapshot => {
+    const pcm = option?.voice?.protocol === "xai_realtime";
+    const live = (muted: boolean, inputMuted = false) => {
       if (this.#call !== call) return;
-      const session = snapshot.session;
-      this.#renderCaptions(snapshot.captions ?? []);
-      this.#muted = !!session.muted;
-      this.#el(".voice-mute").setAttribute("aria-pressed", String(this.#muted));
-      if (session.end_requested || ["failed", "closed"].includes(session.state)) {
-        void this.#finish(session.state === "failed" ? new LocalizedError("voiceFailed") : undefined);
-        return;
+      this.#muted = muted;
+      this.#el(".voice-mute").setAttribute("aria-pressed", String(muted));
+      this.#el(".voice-mute").hidden = false;
+      if (!this.#startedAt) {
+        this.#startedAt = Date.now();
+        const time = this.#el(".voice-time");
+        time.hidden = false;
+        time.textContent = "0:00";
+        this.#timer = window.setInterval(() => {
+          const seconds = Math.floor((Date.now() - this.#startedAt) / 1000);
+          time.textContent = Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+        }, 1000);
       }
-      if (session.state === "active") {
-        this.#el(".voice-mute").hidden = false;
-        if (!this.#startedAt) {
-          this.#startedAt = Date.now();
-          const time = this.#el(".voice-time");
-          time.hidden = false;
-          time.textContent = "0:00";
-          this.#timer = window.setInterval(() => {
-            const seconds = Math.floor((Date.now() - this.#startedAt) / 1000);
-            time.textContent = Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
-          }, 1000);
-        }
-        this.#setStatus("voiceLive");
-        this.#el(".voice-talk").hidden = !pcm || !!session.muted || !!session.input_muted;
-      }
-    }, error => { if (this.#call === call) void this.#finish(error); });
+      this.#setStatus("voiceLive");
+      this.#el(".voice-talk").hidden = !pcm || muted || inputMuted;
+    };
+    const failed = (error: unknown) => { if (this.#call === call) void this.#finish(error); };
+    const call: TemporaryCall | WidgetCall = selected
+      ? new TemporaryCall(this.#connection!, selected, live, (id, speaker, text) => {
+          if (this.#call === call) this.#renderCaptions([{ id, speaker, text }]);
+        }, failed)
+      : new WidgetCall(this.#connection!, bot!.service, snapshot => {
+          if (this.#call !== call) return;
+          this.#renderCaptions(snapshot.captions ?? []);
+          const session = snapshot.session;
+          if (session.end_requested || ["failed", "closed"].includes(session.state)) {
+            void this.#finish(session.state === "failed" ? new LocalizedError("voiceFailed") : undefined);
+          } else if (session.state === "active") live(!!session.muted, !!session.input_muted);
+        }, failed);
+    this.#call = call;
     this.#el(".voice-start").hidden = true;
     this.#el(".voice-end").hidden = false;
     this.#el(".voice-back").hidden = true;
@@ -261,9 +298,11 @@ export class WidgetVoice {
     this.#select(".voice-bot").disabled = this.#select(".voice-provider").disabled = true;
     this.#setStatus("voiceStarting");
     try {
+      if (call instanceof TemporaryCall) { await call.start(); return; }
+      if (!option || !agent) return;
       const saved = this.#choices?.preferences;
       const voice = option.voice?.voices?.find(v => v.id === saved?.voice)?.id ?? option.voice?.voices?.[0]?.id;
-      await call.start(this.#agent.agent_id, {
+      await call.start(agent.agent_id, {
         service_id: option.service_id, connection_id: option.connection_id, key_source: option.key_source,
         model: option.model, voice, language: saved?.language, input_mode: pcm ? "push_to_talk" : "automatic",
       }, pcm);

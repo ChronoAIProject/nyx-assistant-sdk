@@ -5,7 +5,7 @@ import type { AgentIdentity } from "./agent-identity.ts";
 
 type Service = AgentIdentity["services"][number];
 
-async function gatherIce(peer: RTCPeerConnection, signal: AbortSignal) {
+export async function gatherIce(peer: RTCPeerConnection, signal: AbortSignal) {
   await peer.setLocalDescription(await peer.createOffer());
   const timeout = AbortSignal.any([signal, AbortSignal.timeout(6000)]);
   while (peer.iceGatheringState !== "complete") {
