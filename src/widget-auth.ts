@@ -298,6 +298,10 @@ export class BrowserAuthorization {
       return fetch(input, { ...init, credentials: "omit", headers });
     });
     const revoke = () => this.#withGrantLock(undefined, revokeChild);
-    return { connection, revoke, ownerId: key.owner_id, keyId: key.id, credentialId: parsed.data!.credential_id };
+    const access = Object.freeze({
+      services: Object.freeze([...services].sort()),
+      managementUrl: new URL("/keys/api-key/" + encodeURIComponent(key.id), this.#origin).href,
+    });
+    return { connection, revoke, access, ownerId: key.owner_id, keyId: key.id, credentialId: parsed.data!.credential_id };
   }
 }

@@ -89,6 +89,10 @@ button:focus-visible, a:focus-visible {
 }
 :host([layout="anchored"][position="left"]) .panel { left: 0; right: auto; }
 .identity, .send-icon { display: none; }
+.access { padding: .45em .9em; font-size: .88em; border-bottom: 1px solid var(--_nyx-line); }
+.access summary { cursor: pointer; }
+.access p { margin: .4em 0; overflow-wrap: anywhere; }
+.access a { color: var(--_nyx-accent); }
 .starters {
   flex: 0 1 auto;
   min-height: 0;

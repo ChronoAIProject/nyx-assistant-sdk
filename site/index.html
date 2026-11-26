@@ -30,9 +30,12 @@
         <h1 id="intro">让助手理解页面，<br><em>也能操作页面。</em></h1>
         <p>将用户已授权的 NyxID 服务接入你的应用。用类型化工具把页面状态、可执行操作和真实结果交给同一段对话。</p>
         <div class="hero-actions">
-          <a class="primary" href="#quickstart">快速开始 <span aria-hidden="true">→</span></a>
+          <button id="connect-nyxid" class="primary" type="button" disabled>连接 NyxID</button>
+          <a id="manage-key" class="primary" hidden target="_blank" rel="noopener noreferrer">在 NyxID 调整权限 <span aria-hidden="true">↗</span></a>
+          <a class="secondary" href="#quickstart">快速开始 <span aria-hidden="true">→</span></a>
           <a class="secondary" href="#playground">运行演练 <span aria-hidden="true">↘</span></a>
         </div>
+        <p id="key-services" aria-live="polite" hidden></p>
         <div class="platforms">浏览器挂件 <span aria-hidden="true"></span> TypeScript <span aria-hidden="true"></span> 原生应用</div>
       </div>
 

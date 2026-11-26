@@ -54,6 +54,9 @@ test("a restored child is checked against live NyxID permissions before use", as
   });
   const grant = await flow.restore(new AbortController().signal);
   assert.equal(grant?.ownerId, "person");
+  assert.deepEqual(grant?.access, {
+    services: ["llm-nyx"], managementUrl: "https://id.example/keys/api-key/test-key",
+  });
   const encrypted = local.getItem(flow.credentialStorageKey)!;
   assert.match(encrypted, /^nyx-sealed:v1:/);
   assert.ok(!encrypted.includes("child-only"));
