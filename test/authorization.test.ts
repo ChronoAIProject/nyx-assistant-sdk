@@ -185,3 +185,50 @@ test("overlapping persistent connects share one child and disconnect is recovera
   assert.equal(local.length, 0);
   assert.deepEqual(await Promise.all([first.restore(signal), second.restore(signal)]), [undefined, undefined]);
 });
+
+test("a key identity login carries its approved services, with separate state from a restricted grant", async t => {
+  const local = storage();
+  const options = { base: "https://api.example", verificationOrigin: "https://id.example",
+    clientLabel: "Agent platform", credentialStorage: local };
+  const flow = new BrowserAuthorization({ ...options, services: "@key" });
+  const restricted = new BrowserAuthorization({ ...options, services: ["llm-nyx"] });
+  assert.notEqual(flow.credentialStorageKey, restricted.credentialStorageKey);
+  let login = "first-login";
+  let keyId = "agent-one";
+  let now = Date.now();
+  t.mock.method(Date, "now", () => now);
+  t.mock.method(globalThis, "fetch", async (url: URL, init: RequestInit) => {
+    const identity = { credential_id: login, api_key: { ...current.api_key,
+      id: keyId, allow_all_services: true, allow_all_nodes: true, scopes: "proxy read",
+      effective_services: [...current.api_key.effective_services, { id: "reports", slug: "reports", is_active: true }],
+    } };
+    if (url.pathname.endsWith("/request")) return Response.json({ device_code: "device", user_code: "TEST-1234",
+      verification_uri: "https://id.example/login/agent-key", interval: 1, expires_in: 300 });
+    if (url.pathname.endsWith("/poll")) return Response.json({ ...identity, credential: "child-only" });
+    assert.equal(new Headers(init.headers).get("authorization"), "Bearer child-only");
+    return init.method === "DELETE" ? new Response(null, { status: 204 }) : Response.json(identity);
+  });
+  const signal = new AbortController().signal;
+  async function loginAgain() {
+    return flow.connect(signal, url => {
+      now += 1000;
+      assert.equal(url.searchParams.get("key_source"), "existing");
+      assert.equal(url.searchParams.has("permissions"), false);
+      assert.equal(url.searchParams.has("services"), false);
+    });
+  }
+  const first = await loginAgain();
+  assert.deepEqual(first.identity.services.map(s => s.slug), ["chat", "reports"]);
+  assert.equal((await flow.restore(signal))?.identity.keyId, first.identity.keyId);
+  await first.revoke();
+  login = "second-login";
+  const second = await loginAgain();
+  assert.equal(second.identity.keyId, first.identity.keyId);
+  assert.notEqual(second.identity.credentialId, first.identity.credentialId);
+  await second.revoke();
+  keyId = "agent-two";
+  const third = await loginAgain();
+  assert.equal(third.identity.ownerId, first.identity.ownerId);
+  assert.notEqual(third.identity.keyId, first.identity.keyId);
+  await third.revoke();
+});

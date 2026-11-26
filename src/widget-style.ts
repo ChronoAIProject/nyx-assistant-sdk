@@ -88,6 +88,23 @@ button:focus-visible, a:focus-visible {
   inset: auto 0 calc(100% + 6px) auto;
 }
 :host([layout="anchored"][position="left"]) .panel { left: 0; right: auto; }
+.agent {
+  padding: .4em 12px;
+  border-bottom: 1px solid var(--_nyx-line);
+  color: var(--_nyx-muted);
+  font-size: .82em;
+  overflow-wrap: anywhere;
+}
+.agent summary { cursor: pointer; }
+.agent p { margin-top: .5em; }
+.agent .service-count { color: var(--_nyx-ink); font-weight: 650; }
+.agent ul { max-height: 7.5em; overflow: auto; margin: .3em 0; padding-inline-start: 1.4em; }
+.agent li { margin-block: .18em; }
+.agent-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .3em 1em; }
+.agent-actions a { color: var(--_nyx-accent); text-underline-offset: .15em; }
+.agent-actions button { padding: .25em .6em; }
+.key-info { margin-top: .45em; }
+.agent summary:focus-visible { outline: 2px solid var(--_nyx-accent); }
 .identity, .send-icon { display: none; }
 .starters {
   flex: 0 1 auto;
