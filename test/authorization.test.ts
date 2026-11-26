@@ -1,7 +1,27 @@
 import "fake-indexeddb/auto";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { BrowserAuthorization } from "../src/widget-auth.ts";
+
+beforeEach(t => {
+  // Model exclusive requests by name on Node versions without browser Web Locks.
+  const tails = new Map<string, Promise<void>>();
+  const descriptor = Object.getOwnPropertyDescriptor(navigator, "locks");
+  Object.defineProperty(navigator, "locks", { configurable: true, value: {
+    request<T>(name: string, { signal }: LockOptions, run: () => Promise<T>) {
+      const result = (tails.get(name) ?? Promise.resolve()).then(() => {
+        signal?.throwIfAborted();
+        return run();
+      });
+      tails.set(name, result.then(() => {}, () => {}));
+      return result;
+    },
+  } });
+  t.after(() => {
+    if (descriptor) Object.defineProperty(navigator, "locks", descriptor);
+    else Reflect.deleteProperty(navigator, "locks");
+  });
+});
 
 function storage(): Storage {
   const rows = new Map<string,string>();
@@ -61,6 +81,7 @@ test("a changed scope revokes only the delivered child, a transient failure pres
   assert.equal(flow.hasSavedGrant,false);
 });
 test("the pending challenge resumes from the same tab without creating a second request", async t => {
+  Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
   const tab = storage();
   const options = {base:"https://api.example", verificationOrigin:"https://id.example", services:["llm-nyx"], keySource:"new" as const, storage:tab, clientLabel:"Test"};
   const calls:string[]=[];
@@ -77,4 +98,90 @@ test("the pending challenge resumes from the same tab without creating a second 
   }
   assert.deepEqual(calls,["/api/v1/auth/agent-key/request"]);
   new BrowserAuthorization(options).cancel();assert.equal(tab.length,0);
+});
+
+test("persistent enrollment requires Web Locks before requesting a challenge", async t => {
+  Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+  const flow = new BrowserAuthorization({
+    base: "https://api.example", verificationOrigin: "https://id.example", services: ["llm-nyx"],
+    clientLabel: "Test", credentialStorage: storage(),
+  });
+  const fetch = t.mock.method(globalThis, "fetch", () => assert.fail("unexpected enrollment request"));
+  await assert.rejects(flow.connect(new AbortController().signal, () => assert.fail("unexpected link")), /Web Locks/);
+  assert.equal(fetch.mock.callCount(), 0);
+});
+
+test("overlapping persistent connects share one child and disconnect is recoverable", { timeout: 3000 }, async t => {
+  const local = storage();
+  const options = { base: "https://api.example", verificationOrigin: "https://id.example",
+    services: ["llm-nyx"], clientLabel: "Test", credentialStorage: local };
+  const firstTab = storage();
+  const secondTab = storage();
+  const first = new BrowserAuthorization({ ...options, storage: firstTab });
+  const second = new BrowserAuthorization({ ...options, storage: secondTab });
+  const { signal } = new AbortController();
+  const pollStarted = Promise.withResolvers<void>();
+  const approved = Promise.withResolvers<void>();
+  let now = Date.now();
+  t.mock.method(Date, "now", () => now);
+  let requests = 0;
+  let deliveries = 0;
+  let active = false;
+  let revokeStatus = 503;
+  t.mock.method(globalThis, "fetch", async (url: URL, init: RequestInit) => {
+    assert.equal(url.origin, "https://api.example");
+    assert.equal(init.credentials, "omit");
+    switch (url.pathname) {
+      case "/api/v1/auth/agent-key/request":
+        assert.equal(++requests, 1, "the second tab must reuse the saved grant");
+        return Response.json({ device_code: "device-first", user_code: "TEST-1234",
+          expires_in: 300, interval: 1, verification_uri: "https://id.example/login/agent-key" });
+      case "/api/v1/auth/agent-key/poll":
+        assert.equal(JSON.parse(String(init.body)).device_code, "device-first");
+        pollStarted.resolve();
+        await approved.promise;
+        deliveries++;
+        active = true;
+        return Response.json({ ...current, credential: "child-only" });
+      case "/api/v1/auth/agent-key/self":
+        assert.equal(new Headers(init.headers).get("Authorization"), "Bearer child-only");
+        if (!active) return new Response(null, { status: 401 });
+        if (init.method !== "DELETE") return Response.json(current);
+        if (revokeStatus === 204) active = false;
+        return new Response(null, { status: revokeStatus });
+      default:
+        assert.fail("Unexpected NyxID request " + url.pathname);
+    }
+  });
+
+  const firstConnect = first.connect(signal, (url, code) => {
+    assert.equal(code, "TEST-1234");
+    assert.equal(url.searchParams.get("key_source"), "existing");
+    now += 1000;
+  });
+  await pollStarted.promise;
+  assert.equal(firstTab.length, 1);
+  const secondConnect = second.connect(signal, () => assert.fail("a second approval link was shown"));
+  approved.resolve();
+  const [firstGrant, secondGrant] = await Promise.all([firstConnect, secondConnect]);
+  assert.equal(requests, 1);
+  assert.equal(deliveries, 1);
+  assert.equal(firstGrant.keyId, "test-key");
+  assert.equal(secondGrant.keyId, firstGrant.keyId);
+  assert.equal(firstTab.length, 0);
+  assert.equal(secondTab.length, 0);
+
+  const record = local.getItem(first.credentialStorageKey);
+  assert.match(record!, /^nyx-sealed:v1:/);
+  const reloaded = new BrowserAuthorization({ ...options, storage: firstTab });
+  assert.equal((await reloaded.restore(signal))?.keyId, firstGrant.keyId);
+  await assert.rejects(secondGrant.revoke(), /重试/);
+  assert.equal(active, true);
+  assert.equal(local.getItem(first.credentialStorageKey), record);
+
+  revokeStatus = 204;
+  await firstGrant.revoke();
+  assert.equal(active, false);
+  assert.equal(local.length, 0);
+  assert.deepEqual(await Promise.all([first.restore(signal), second.restore(signal)]), [undefined, undefined]);
 });

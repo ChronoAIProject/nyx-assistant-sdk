@@ -32,7 +32,9 @@ export interface BrowserAuthorizationOptions {
   clientLabel: string;
   /** Supply tab-local storage to resume a pending request after reloading. */
   storage?: Storage;
-  /** Origin-local storage for the encrypted child credential. The non-exportable key lives in IndexedDB. Each restored grant is checked with NyxID. */
+  /** Origin-local storage for the encrypted child credential. Requires Web Locks.
+   * The non-exportable key lives in IndexedDB. Each restored grant is checked with NyxID.
+   */
   credentialStorage?: Storage;
 }
 
@@ -91,9 +93,23 @@ export class BrowserAuthorization {
     return Boolean(this.#options.credentialStorage?.getItem(this.credentialStorageKey));
   }
 
+  async #withGrantLock<T>(signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
+    signal?.throwIfAborted();
+    if (!this.#options.credentialStorage) return run();
+    const locks = globalThis.navigator?.locks;
+    if (!locks) throw Error("浏览器需要支持 Web Locks 才能使用站点授权存储。");
+    return locks.request(this.credentialStorageKey, { signal }, run);
+  }
+
   async restore(signal: AbortSignal) {
+    if (!this.hasSavedGrant) return undefined;
+    return this.#withGrantLock(signal, () => this.#restore(signal));
+  }
+
+  async #restore(signal: AbortSignal) {
     const store = this.#options.credentialStorage;
     if (!store) return undefined;
+    signal.throwIfAborted();
     let record = store.getItem(this.credentialStorageKey);
     if (!record) return undefined;
     let credential: string | undefined;
@@ -151,56 +167,64 @@ export class BrowserAuthorization {
     const active = AbortSignal.any([signal, controller.signal]);
     this.#active = controller;
     try {
-      active.throwIfAborted();
-      let pending = this.#saved();
-      if (!pending) {
-        const reply = await this.#request("request", {
-          requested_profile: "nyx-widget", client_label: this.#options.clientLabel,
-          client_app: "nyx-assistant-sdk", client_form_factor: "browser",
-        }, active);
-        if (!reply.ok) throw Error("NyxID 授权请求失败（HTTP " + reply.status + "）。");
-        const value = challenge.parse(await reply.json());
-        pending = { ...value, expiresAt: Date.now() + value.expires_in * 1000, nextPollAt: Date.now() + value.interval * 1000 };
-      }
-      const url = new URL(pending.verification_uri);
-      if (url.origin !== this.#origin || url.pathname !== "/login/agent-key" || url.username || url.password || url.hash) {
-        this.cancel();
-        throw Error("授权页面地址与配置的 NyxID 登录站点不符。");
-      }
-      url.search = new URLSearchParams({
-        user_code: pending.user_code, login_type: "agent", key_source: this.#options.keySource ?? "existing",
-        permissions: "proxy", services: this.#services.join(","),
-      }).toString();
-      active.throwIfAborted();
-      const store = this.#options.storage;
-      store?.setItem(this.#storageKey, JSON.stringify(pending));
-      showLink(url, pending.user_code);
-      const lifetime = AbortSignal.any([active, AbortSignal.timeout(Math.max(0, pending.expiresAt - Date.now()))]);
-      let interval = pending.interval * 1000;
-      for (;;) {
-        await sleepUntil(pending.nextPollAt, lifetime);
-        const response = await this.#request("poll", { device_code: pending.device_code }, lifetime);
-        const delivery = await response.json();
-        if (response.ok) {
-          store?.removeItem(this.#storageKey);
-          return await this.#grant(delivery, active);
-        }
-        if (delivery.error === "agent_key_login_slow_down") interval += 5000;
-        else if (delivery.error !== "agent_key_login_pending") {
-          store?.removeItem(this.#storageKey);
-          throw Error("NyxID 授权已拒绝、已交付或已过期，请重新连接。");
-        }
-        pending.nextPollAt = Math.min(Date.now() + interval, pending.expiresAt);
-        store?.setItem(this.#storageKey, JSON.stringify(pending));
-      }
+      // Hold the slot from the saved-grant check through delivery so only one tab can enroll.
+      return await this.#withGrantLock(active, async () => {
+        const saved = await this.#restore(active);
+        return saved ?? this.#enroll(active, showLink);
+      });
     } finally {
       this.#active = undefined;
     }
   }
 
+  async #enroll(active: AbortSignal, showLink: (url: URL, code: string) => void) {
+    active.throwIfAborted();
+    let pending = this.#saved();
+    if (!pending) {
+      const reply = await this.#request("request", {
+        requested_profile: "nyx-widget", client_label: this.#options.clientLabel,
+        client_app: "nyx-assistant-sdk", client_form_factor: "browser",
+      }, active);
+      if (!reply.ok) throw Error("NyxID 授权请求失败（HTTP " + reply.status + "）。");
+      const value = challenge.parse(await reply.json());
+      pending = { ...value, expiresAt: Date.now() + value.expires_in * 1000, nextPollAt: Date.now() + value.interval * 1000 };
+    }
+    const url = new URL(pending.verification_uri);
+    if (url.origin !== this.#origin || url.pathname !== "/login/agent-key" || url.username || url.password || url.hash) {
+      this.cancel();
+      throw Error("授权页面地址与配置的 NyxID 登录站点不符。");
+    }
+    url.search = new URLSearchParams({
+      user_code: pending.user_code, login_type: "agent", key_source: this.#options.keySource ?? "existing",
+      permissions: "proxy", services: this.#services.join(","),
+    }).toString();
+    active.throwIfAborted();
+    const store = this.#options.storage;
+    store?.setItem(this.#storageKey, JSON.stringify(pending));
+    showLink(url, pending.user_code);
+    const lifetime = AbortSignal.any([active, AbortSignal.timeout(Math.max(0, pending.expiresAt - Date.now()))]);
+    let interval = pending.interval * 1000;
+    for (;;) {
+      await sleepUntil(pending.nextPollAt, lifetime);
+      const response = await this.#request("poll", { device_code: pending.device_code }, lifetime);
+      const delivery = await response.json();
+      if (response.ok) {
+        store?.removeItem(this.#storageKey);
+        return await this.#grant(delivery, active);
+      }
+      if (delivery.error === "agent_key_login_slow_down") interval += 5000;
+      else if (delivery.error !== "agent_key_login_pending") {
+        store?.removeItem(this.#storageKey);
+        throw Error("NyxID 授权已拒绝、已交付或已过期，请重新连接。");
+      }
+      pending.nextPollAt = Math.min(Date.now() + interval, pending.expiresAt);
+      store?.setItem(this.#storageKey, JSON.stringify(pending));
+    }
+  }
+
   async #grant(delivery: unknown, signal: AbortSignal, record?: string) {
     const { credential } = z.object({ credential: z.string().min(1) }).parse(delivery);
-    const revoke = async () => {
+    const revokeChild = async () => {
       const response = await fetch(new URL("api/v1/auth/agent-key/self", this.#base), {
         method: "DELETE", redirect: "error", credentials: "omit", keepalive: true,
         headers: { Authorization: "Bearer " + credential },
@@ -217,7 +241,7 @@ export class BrowserAuthorization {
         !scopes.includes("proxy") || scopes.some(s => s !== "proxy" && s !== "read") ||
         services.size !== this.#services.length || this.#services.some(s => !services.has(s)) ||
         ids.size !== new Set(key.allowed_service_ids).size || key.allowed_service_ids.some(id => !ids.has(id))) {
-      await revoke();
+      await revokeChild();
       throw Error("本次浏览器授权已撤销。请选择请求的账号、proxy 权限和页面列出的服务。");
     }
     if (!record && this.#options.credentialStorage) {
@@ -226,13 +250,14 @@ export class BrowserAuthorization {
         signal.throwIfAborted();
         this.#options.credentialStorage.setItem(this.credentialStorageKey, record);
       }
-      catch { await revoke(); throw Error("浏览器无法保存此授权，请检查站点存储设置。"); }
+      catch { await revokeChild(); throw Error("浏览器无法保存此授权，请检查站点存储设置。"); }
     }
     const connection = new NyxIDConnection(this.#base, (input, init) => {
       const headers = new Headers(init?.headers);
       headers.set("Authorization", "Bearer " + credential);
       return fetch(input, { ...init, credentials: "omit", headers });
     });
+    const revoke = () => this.#withGrantLock(undefined, revokeChild);
     return { connection, revoke, ownerId: key.owner_id, keyId: key.id };
   }
 }
