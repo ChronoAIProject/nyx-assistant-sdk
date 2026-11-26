@@ -1,7 +1,7 @@
 {
   "services": {
     "sdk-server": {
-      "image": "ghcr.io/chronoaiproject/nyx-assistant-sdk-server:7c1b3799e5fc5569f4e56c3f705065d40bb9d6b4@sha256:dd01912879c252167565a9c6877e07304c610e6bf5f7308edbb36e774b98032d",
+      "image": "ghcr.io/chronoaiproject/nyx-assistant-sdk-server:a6578094409fd9b2d8416b4ba9af54f3f380641b@sha256:6c2ad43c377450574fb792c5ea43b24389c1e014749aeb8da1ebdb990c77cf0b",
       "port": 8080,
       "routes": [
         "/"
