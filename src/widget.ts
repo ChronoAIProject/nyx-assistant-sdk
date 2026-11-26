@@ -189,7 +189,9 @@ export class NyxAssistantElement extends HTMLElement {
     if (this.dataset.storage === "local") credentialStorage = localStorage;
     this.#persistent = Boolean(credentialStorage);
     try { storage = sessionStorage; } catch { /* Storage is optional for this visit. */ }
-    const services = (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
+    const services = this.dataset.services === "@key"
+      ? "@key"
+      : (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
     return new BrowserAuthorization({
       base, verificationOrigin: this.dataset.verificationOrigin || base.origin, services, storage, credentialStorage,
       previousGrant: this.previousGrant, ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined, catalogServices: this.dataset.catalogServices?.split(","), clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",

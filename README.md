@@ -16,7 +16,51 @@ SDK 官网的「Nyx 助手」可连接 NyxID，用自然语言查询或切换工
 
 `data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。独立转发服务部署于 chrono-cd，使用 `data-nyxid` 指向服务地址，并设置 `data-verification-origin="https://nyxid.ai"`。部署方通过 `SDK_ORIGINS` 配置接入站点。挂件默认使用内存。设置 `data-storage="local"` 需要浏览器支持 Web Locks。同源标签页按站点配置依次连接并复用已保存的授权。挂件通过 Web Crypto 的 AES-GCM 加密子凭据，密文保存在站点 localStorage，不可导出的密钥存于该源的 IndexedDB。浏览器恢复时先迁移 alpha.4 的明文记录，再向 NyxID 核验。能在同源运行的脚本仍然可以使用已授权的凭据。断开授权会撤销当前子凭据并通知同源标签页。
 
-`data-services` 用逗号分隔此应用需要的服务，默认是 `llm-nyx,chrono-llm-public`。`data-key-source="new"` 在 NyxID 授权页预填创建专用 Key，默认预选已有 Key。批准后的实际权限由挂件按此服务列表核验。未完成的申请保存在当前标签页，刷新后点连接可以继续原申请。自有 UI 可从 `@chronoai/nyx-assistant-sdk/agent-key` 导入 `BrowserAuthorization`，传入 NyxID 的 `base`、登录页 `verificationOrigin`、`services` 和 `clientLabel`；`connect(signal, showLink)` 提供授权链接，`restore(signal)` 恢复并核验已存凭据。返回的 `connection` 可直接创建聊天适配器。
+`data-services` 用逗号分隔此应用需要的服务，默认是 `llm-nyx,chrono-llm-public`。设置为 `@key` 时，挂件使用用户在 NyxID 授权页选择的 Agent Key 原有服务授权，适合同时接入 Bot Voice 等具体连接。`data-key-source="new"` 在 NyxID 授权页预填创建专用 Key，默认预选已有 Key。批准后的实际权限由挂件按此服务列表核验。未完成的申请保存在当前标签页，刷新后点连接可以继续原申请。自有 UI 可从 `@chronoai/nyx-assistant-sdk/agent-key` 导入 `BrowserAuthorization`，传入 NyxID 的 `base`、登录页 `verificationOrigin`、`services` 和 `clientLabel`；`connect(signal, showLink)` 提供授权链接，`restore(signal)` 恢复并核验已存凭据。返回的 `connection` 可直接创建聊天适配器。
+
+## 用 Agent Key 连接 Bot Voice
+
+NyxID 的 Bot Voice 是独立的 `nyxbot-voice` 服务连接。Bot 所有者先在 NyxID 的 Agent 详情中发布 Device voice，再把这条具体连接授予设备 Key。客户端读取 Key 身份，选择精确的 `service_id`，并核验 `/voice/agents` 返回的 Bot 与服务 ID 相同。
+
+```ts
+import { NyxIDConnection } from "@chronoai/nyx-assistant-sdk";
+import {
+  VoiceClient,
+  discoverVoiceAgent,
+  selectVoiceService,
+} from "@chronoai/nyx-assistant-sdk/voice";
+
+const connection = NyxIDConnection.fromAgentKey(nyxidBaseUrl, childCredential);
+const identity = await connection.getAgentIdentity();
+const service = selectVoiceService(identity, selectedServiceId);
+const agent = await discoverVoiceAgent(connection, service);
+const voice = new VoiceClient(connection, service, {
+  // nyx-panel supplies a WebSocket implementation that sends this header.
+  socket: (url, credential) => createWebSocket(url, {
+    headers: { Authorization: `Bearer ${credential}` },
+  }),
+});
+const options = await voice.getOptions(agent.conversation_id);
+const option = options.options.find(item => item.available);
+if (!option) throw new Error("No available Voice provider");
+
+// Create a WebRTC offer from the microphone stream, then apply sdp_answer
+// to the peer connection returned by the host's WebRTC implementation.
+const started = await voice.start({
+  agentId: agent.agent_id,
+  preferences: {
+    service_id: option.service_id,
+    connection_id: option.connection_id,
+    key_source: option.key_source,
+    model: option.model,
+    input_mode: "automatic",
+  },
+  sdpOffer,
+});
+await peer.setRemoteDescription({ type: "answer", sdp: started.sdp_answer });
+```
+
+`VoiceClient` 还提供 `heartbeat(playbackMs, playbackAudible)`、`control("mute" | "unmute" | "end")` 和 `announce({text})` 或 `announce({greeting: true})`。`openWebSocket` 只把 Agent Key 子凭据交给宿主提供的 WebSocket 工厂，控制流需要该工厂支持自定义 Authorization 头。SDK 将提供商凭据留在 NyxID，并把每个 HTTP 和 WebSocket 操作路由到已核验的 `nyxbot-voice/{service_id}` 连接。
 
 应用已有聊天面板时，从 `@chronoai/nyx-assistant-sdk/widget` 导入 `NyxAssistantElement`，使用 `customElements.define("nyx-assistant", NyxAssistantElement)` 注册一次。创建元素后先设置 `layout="embedded"`、连接参数、`context` 回调及可选的 `instructions`，再挂载。模块导入不会在页面上添加悬浮入口。宿主用 `nyx-ready` 注册页面工具；`nyx-state` 可读取元素的 `busy` 和 `host`，`nyx-answer` 提供本轮已确认的答复。通过 `sendMessage(text)` 可以提交用户明确选择的操作。
 

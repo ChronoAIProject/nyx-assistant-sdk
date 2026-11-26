@@ -9,10 +9,13 @@
 | `tsconfig.json` | TypeScript 源码 | npm run build 生成模块和类型 | 未知 |
 | `.gitignore` | npm 的本地输出路径 | Git 排除可重建安装和产物 | 未知 |
 | `src/connection.ts` | 宿主提供的 NyxID URL 与授权 fetch | 服务适配器通过 NyxID 代理调用服务 | 每次调用一个 HTTP 请求 |
+| `src/agent-identity.ts` | Agent Key self 响应 | `NyxIDConnection` 和授权流程解析当前 Key、精确服务连接和授权范围 | 每次身份读取一次响应解析 |
 | `src/index.ts` | 服务接口、上下文、Zod 工具定义及处理函数 | 各宿主创建实例，订阅、发送、执行和恢复 | 取决于宿主处理函数 |
 | `src/nyx-chat.ts` | 连接、核心契约、Responses SSE 和已保存响应 | Nyx 聊天适配器执行或续接一轮 | 每步一次请求，实际推理成本未知 |
+| `src/voice.ts` | Agent Key 身份、精确 Voice UserService、WebRTC SDP 和控制 WebSocket | nyx-panel 等设备宿主发现固定 Bot、创建 Voice 会话、发送心跳和控制 | 每次发现、选项、启动或控制一次服务请求，通话媒体成本未知 |
 | `test/host.test.ts` | 核心与模拟服务 | Node 验证实例、权限、调用与恢复 | 未知 |
 | `test/nyx-chat.test.ts` | 核心、连接、适配器与模拟 HTTP | Node 验证线上的请求形状及结果关联 | 未知 |
+| `test/voice.test.ts` | Voice 身份选择、精确服务路由、模拟 HTTP 和控制 socket | Node 验证 Agent Key Voice 的服务绑定、启动和控制契约 | 未知 |
 | `examples/web/index.html` | 筛选与聊天表单 | 网页用户查看行数、发送请求 | 未知 |
 | `examples/web/app.js` | HTML、SDK 与宿主表格状态 | 网页用户读取和修改筛选 | 未知 |
 | `examples/web/tickets.js` | 工单样例数据、筛选和只读控件、SDK 注册工具接口 | 本机示例和 SDK 官网共同显示筛选结果并执行权限检查 | 每次变更重画可见行 |

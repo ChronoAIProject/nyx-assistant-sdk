@@ -12,6 +12,10 @@
       "types": "./dist/nyx-chat.d.ts",
       "import": "./dist/nyx-chat.js"
     },
+    "./voice": {
+      "types": "./dist/voice.d.ts",
+      "import": "./dist/voice.js"
+    },
     "./agent-key": {
       "types": "./dist/widget-auth.d.ts",
       "import": "./dist/widget-auth.js"
