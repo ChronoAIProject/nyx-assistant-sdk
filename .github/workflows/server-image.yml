@@ -1,19 +1,59 @@
-name: SDK server image
+name: SDK server publish and deploy
 on:
   push:
-    branches: [dev]
+    branches: [dev, main]
     tags: ["sdk-server-*"]
-    paths: ["server/**", ".github/workflows/server-image.yml"]
+    paths:
+      - server/**
+      - test/server.test.mjs
+      - infra/chrono-cd/**
+      - .github/workflows/server-image.yml
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - server/**
+      - test/server.test.mjs
+      - infra/chrono-cd/**
+      - .github/workflows/server-image.yml
   workflow_dispatch:
+
+concurrency:
+  group: sdk-server-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
-  packages: write
+
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  validate:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - run: node --test test/server.test.mjs
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+      - run: node --test test/server.test.mjs infra/chrono-cd/deploy.test.mjs
+
+  publish:
+    needs: validate
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'ChronoAIProject/nyx-assistant-sdk' &&
+      (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main' ||
+       startsWith(github.ref, 'refs/tags/sdk-server-'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
         with:
@@ -26,8 +66,46 @@ jobs:
           context: server
           platforms: linux/amd64
           push: true
+          provenance: false
           tags: ghcr.io/chronoaiproject/nyx-assistant-sdk-server:${{ github.sha }}
           labels: org.opencontainers.image.source=https://github.com/ChronoAIProject/nyx-assistant-sdk
-      - run: echo "ghcr.io/chronoaiproject/nyx-assistant-sdk-server:${GITHUB_SHA}@${IMAGE_DIGEST}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Record the published image
+        shell: bash
+        run: |
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The image build did not return a valid digest"
+            exit 1
+          fi
+          printf '%s\n' "\`ghcr.io/chronoaiproject/nyx-assistant-sdk-server:$GITHUB_SHA@$IMAGE_DIGEST\`" \
+            >> "$GITHUB_STEP_SUMMARY"
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+
+  deploy:
+    needs: publish
+    if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+      url: ${{ github.ref_name == 'main' && 'https://nyx-assistant-sdk-chronoai.apps.nyxid.ai' || 'https://nyx-assistant-sdk-staging-chronoai.apps.nyxid.ai' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+      - name: Check for newer server or deployment changes
+        run: |
+          git fetch --no-tags --depth=1 origin "$GITHUB_REF"
+          if ! git diff --quiet "$GITHUB_SHA" FETCH_HEAD -- server/ test/server.test.mjs infra/chrono-cd/ .github/workflows/server-image.yml; then
+            echo "::error::The branch has newer server or deployment changes."
+            exit 1
+          fi
+      - name: Deploy the published digest and verify the rollout
+        env:
+          CHRONO_CD_API_KEY: ${{ secrets.CHRONO_CD_API_KEY }}
+          DEPLOY_ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+          IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
+        run: node infra/chrono-cd/deploy.mjs
