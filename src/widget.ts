@@ -24,19 +24,19 @@ class NyxAssistantElement extends HTMLElement {
     this.#root.innerHTML = `<style>${widgetStyle}</style>
       <button class="launch" part="launcher" type="button" aria-expanded="false" aria-controls="panel"><span class="bubble" part="launcher-icon" aria-hidden="true"></span>Nyx 助手</button>
       <section hidden id="panel" class="panel" part="panel" role="dialog" aria-labelledby="title">
-        <header part="header"><h2 id="title">Nyx 助手</h2><button class="disconnect" type="button" hidden>断开授权</button>
+        <header part="header"><h2 id="title">Nyx 助手</h2><button class="disconnect" part="secondary-action" type="button" hidden>断开授权</button>
           <button class="close" part="close" type="button" aria-label="收起助手">×</button></header>
         <div class="chat" role="log" aria-label="聊天记录" aria-live="polite"></div>
         <div class="controls"><p class="status" role="status"></p>
           <a class="verify" hidden target="_blank" rel="noopener noreferrer"></a>
           <p class="connect-hint">连接 NyxID 后，可以向助手提问或操作当前页面。</p>
           <button class="connect" part="primary-action" type="button">连接 NyxID</button>
-          <form hidden><textarea part="input" aria-label="消息" placeholder="给 Nyx 发消息…" required></textarea>
+          <form hidden><textarea rows="1" part="input" aria-label="消息" placeholder="给 Nyx 发消息…" required></textarea>
             <button class="send" part="primary-action" type="submit">发送</button></form>
           <button class="resume" hidden type="button">核对原请求</button>
         </div>
       </section>`;
-    this.#el(".launch").onclick = () => this.#open(true);
+    this.#el(".launch").onclick = () => this.#open(this.#el(".panel").hidden);
     this.#el(".close").onclick = () => this.#open(false);
     this.#el(".connect").onclick = () => {
       void this.#connect();
@@ -237,7 +237,7 @@ class NyxAssistantElement extends HTMLElement {
   #open(open: boolean) {
     this.#el(".panel").hidden = !open;
     const launch = this.#el(".launch");
-    launch.hidden = open;
+    launch.hidden = open && this.getAttribute("layout") !== "anchored";
     launch.setAttribute("aria-expanded", String(open));
     let focus = ".connect";
     if (this.#host) focus = "textarea";
