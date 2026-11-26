@@ -29,6 +29,7 @@ class NyxAssistantElement extends HTMLElement {
         <div class="chat" role="log" aria-label="聊天记录" aria-live="polite"></div>
         <div class="controls"><p class="status" role="status"></p>
           <a class="verify" hidden target="_blank" rel="noopener noreferrer"></a>
+          <p class="connect-hint">连接 NyxID 后，可以向助手提问或操作当前页面。</p>
           <button class="connect" type="button">连接 NyxID</button>
           <form hidden><textarea aria-label="消息" placeholder="给 Nyx 发消息…" required></textarea>
             <button class="send" type="submit">发送</button></form>
@@ -225,6 +226,7 @@ class NyxAssistantElement extends HTMLElement {
     const waitingForApproval = this.#login?.restoreOnly === false;
     const disconnect = this.#el<HTMLButtonElement>(".disconnect");
     this.#el(".connect").hidden = Boolean(this.#host || this.#login || this.#revoke);
+    this.#el(".connect-hint").hidden = this.#el(".connect").hidden;
     disconnect.hidden = !this.#revoke && !waitingForApproval;
     disconnect.disabled = this.#revoking;
     disconnect.textContent = waitingForApproval ? "停止等待授权" : "断开授权";

@@ -3,15 +3,15 @@ export const widgetStyle = `
   color-scheme: light dark;
   font: inherit;
   line-height: 1.45;
-  --ink: var(--nyx-text, CanvasText);
-  --paper: var(--nyx-surface, Canvas);
-  --accent: var(--nyx-accent, #236456);
-  --line: color-mix(in srgb, var(--ink) 18%, transparent);
+  --_nyx-ink: var(--nyx-text, CanvasText);
+  --_nyx-paper: var(--nyx-surface, Canvas);
+  --_nyx-accent: var(--nyx-accent, #236456);
+  --_nyx-line: color-mix(in srgb, var(--_nyx-ink) 18%, transparent);
   position: fixed;
   z-index: var(--nyx-z-index, 1000);
   inset: auto max(16px, env(safe-area-inset-right))
     max(16px, env(safe-area-inset-bottom)) auto;
-  color: var(--ink);
+  color: var(--_nyx-ink);
 }
 :host([position="left"]) {
   right: auto;
@@ -41,13 +41,13 @@ button:disabled {
 button:focus-visible,
 a:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--_nyx-accent);
   outline-offset: 2px;
 }
 .launch,
 .send,
 .connect {
-  background: var(--accent);
+  background: var(--_nyx-accent);
   color: var(--nyx-accent-text, white);
   font-weight: 600;
 }
@@ -68,22 +68,29 @@ textarea:focus-visible {
   border-radius: 5px 5px 5px 1px;
 }
 .panel {
-  border: 1px solid var(--line);
+  border: 1px solid var(--_nyx-line);
   border-radius: var(--nyx-radius, 18px);
-  background: var(--paper);
+  background: var(--_nyx-paper);
   box-shadow: 0 8px 32px #0002;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   width: min(23rem, calc(100vw - 32px));
-  height: min(30rem, calc(100dvh - 32px));
+  max-height: var(--nyx-panel-max-height, calc(100dvh - 32px));
+  height: 30rem;
+}
+.panel:has(form[hidden]):not(:has(.msg)) {
+  height: auto;
+}
+.chat:empty {
+  padding: 0;
 }
 header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 12px 12px 18px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--_nyx-line);
 }
 h2 {
   font: inherit;
@@ -114,18 +121,18 @@ p {
 }
 .msg {
   padding: 9px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--_nyx-line);
   border-radius: 12px;
   width: fit-content;
   max-width: 94%;
 }
 .user {
-  background: color-mix(in srgb, var(--accent) 11%, var(--paper));
+  background: color-mix(in srgb, var(--_nyx-accent) 11%, var(--_nyx-paper));
   margin-inline-start: auto;
 }
 .controls {
   padding: 12px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--_nyx-line);
 }
 .status {
   font-size: 0.88em;
@@ -145,10 +152,10 @@ textarea {
   max-height: 6em;
   min-width: 0;
   flex: 1;
-  color: var(--ink);
-  background: var(--paper);
+  color: var(--_nyx-ink);
+  background: var(--_nyx-paper);
   padding: 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--_nyx-line);
   border-radius: 9px;
 }
 .send,
@@ -159,10 +166,10 @@ textarea {
   padding: 0 13px;
 }
 .resume {
-  border: 1px solid var(--line);
+  border: 1px solid var(--_nyx-line);
 }
 a {
-  color: var(--accent);
+  color: var(--_nyx-accent);
   display: inline-block;
   margin: 0 0 8px;
   text-decoration: underline;
