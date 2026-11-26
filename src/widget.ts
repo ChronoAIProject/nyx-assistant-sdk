@@ -6,7 +6,7 @@ import { widgetStyle } from "./widget-style.ts";
 class NyxAssistantElement extends HTMLElement {
   #root = this.attachShadow({ mode: "open" });
   #host?: AssistantHost;
-  #login?: AbortController;
+  #login?: { controller: AbortController; restoreOnly: boolean };
   #revoke?: () => Promise<void>;
   #revoking = false;
   #authorization?: BrowserAuthorization;
@@ -107,7 +107,7 @@ class NyxAssistantElement extends HTMLElement {
     });
   }
   #clearView() {
-    this.#login?.abort();
+    this.#login?.controller.abort();
     this.#login = undefined;
     this.#host?.dispose();
     this.#host = undefined;
@@ -155,19 +155,15 @@ class NyxAssistantElement extends HTMLElement {
   }
   async #connect(restoreOnly = false) {
     if (this.#login || this.#host || this.#revoke) return;
-    const login = new AbortController();
+    const controller = new AbortController();
+    const login = { controller, restoreOnly };
+    const { signal } = controller;
     this.#login = login;
     this.#controls();
     this.#el(".status").textContent = "正在连接 NyxID…";
     try {
       const flow = this.#authorization ??= this.#createFlow();
-      const restored = await flow.restore(login.signal);
-      if (login.signal.aborted) return;
-      if (restoreOnly && !restored) {
-        this.#el(".status").textContent = "";
-        return;
-      }
-      const grant = restored ?? await flow.connect(login.signal,
+      const grant = restoreOnly ? await flow.restore(signal) : await flow.connect(signal,
         (url, code) => {
           const link = this.#el<HTMLAnchorElement>(".verify");
           link.href = url.href;
@@ -177,14 +173,18 @@ class NyxAssistantElement extends HTMLElement {
           this.#controls();
         },
       );
-      if (login.signal.aborted) {
-        if (!restored && !this.#persistent) await grant.revoke();
+      if (signal.aborted) {
+        if (!this.#persistent) await grant?.revoke();
+        return;
+      }
+      if (!grant) {
+        this.#el(".status").textContent = "";
         return;
       }
       this.#bind(grant.connection, grant.revoke);
       if (!this.#el(".panel").hidden) this.#el("textarea").focus();
     } catch (error) {
-      if (!login.signal.aborted)
+      if (!signal.aborted)
         this.#el(".status").textContent =
           error instanceof Error ? error.message : "无法连接 NyxID。";
     } finally {
@@ -197,7 +197,7 @@ class NyxAssistantElement extends HTMLElement {
   }
   async #disconnect() {
     const revoke = this.#revoke;
-    if (this.#revoking || (!revoke && this.#el(".verify").hidden)) return;
+    if (this.#revoking || (!revoke && this.#login?.restoreOnly !== false)) return;
     this.#authorization?.cancel();
     if (!revoke) {
       void this.#release();
@@ -222,7 +222,7 @@ class NyxAssistantElement extends HTMLElement {
   }
   #controls() {
     const pending = Boolean(this.#host?.pendingRequestId);
-    const waitingForApproval = Boolean(this.#login && !this.#el(".verify").hidden);
+    const waitingForApproval = this.#login?.restoreOnly === false;
     const disconnect = this.#el<HTMLButtonElement>(".disconnect");
     this.#el(".connect").hidden = Boolean(this.#host || this.#login || this.#revoke);
     disconnect.hidden = !this.#revoke && !waitingForApproval;
