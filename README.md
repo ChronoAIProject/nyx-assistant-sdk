@@ -22,6 +22,8 @@ SDK 官网的「Nyx 助手」可连接 NyxID，用自然语言查询或切换工
 
 有网站登录的宿主可通过 `data-owner-id` 核验当前个人账号，`data-catalog-services` 指定须与 NyxID 目录身份匹配的服务。按账号或工作区切换时重新创建元素。设置 `data-session` 为当前工作区编号后，已验证的同一浏览器子凭据可在当前标签页恢复最近 30 条聊天记录。发生刷新时，已取得响应编号的请求从原响应读取；旧窗口未确认的页面操作提示用户核对。宿主可监听 `nyx-recovery` 打开已有聊天面板。
 
+可在 `<nyx-assistant>` 元素设置 `lang="en"` 或 `lang="zh-CN"`。运行时切换会更新界面、无障碍标签和当前状态，并保留聊天与输入草稿。默认界面为简体中文。
+
 在主视图中放置 `<nyx-assistant>` 元素，可指定挂件位置。将连接配置写在该元素上，用页面 CSS 设置其定位。
 
 控制台页面可选 `appearance="console"`，通过 `--nyx-mark: url(...)` 引用自己的标识，通过 `--nyx-panel-surface` 指定面板背景。若宿主提供 `<button type="button" slot="prompt">读取当前视图</button>`，已连接且对话为空时可点击填入输入框，再编辑和发送。

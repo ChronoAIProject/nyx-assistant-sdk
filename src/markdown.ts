@@ -12,7 +12,7 @@ const markdown = new Marked(markedCjkFriendly(), {
     html({ text }) { return escapeMarkup(text); },
     // Resolve images after parsing so a linked image keeps its outer destination.
     image({ href, text }) {
-      return '<span data-nyx-image="' + escapeMarkup(href) + '">' + escapeMarkup(text || "图片") + '</span>';
+      return '<span data-nyx-image="' + escapeMarkup(href) + '">' + escapeMarkup(text) + '</span>';
     },
   },
 });
@@ -26,7 +26,7 @@ function destination(href: string | null): URL | undefined {
 }
 
 /** Render a confirmed assistant reply in the current browser document. */
-export function renderAssistantMarkdown(source: string): DocumentFragment {
+export function renderAssistantMarkdown(source: string, imageLabel = "图片"): DocumentFragment {
   const fragment = DOMPurify.sanitize(markdown.parse(source, { async: false }), {
     RETURN_DOM_FRAGMENT: true, ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false,
     ALLOWED_TAGS: ["p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "em", "strong", "del", "blockquote",
@@ -35,7 +35,7 @@ export function renderAssistantMarkdown(source: string): DocumentFragment {
   });
   for (const placeholder of fragment.querySelectorAll<HTMLElement>("[data-nyx-image]")) {
     const url = destination(placeholder.dataset.nyxImage ?? null);
-    const alt = placeholder.textContent;
+    const alt = placeholder.textContent || imageLabel;
     if (url?.protocol !== "https:" || placeholder.closest("a")) {
       placeholder.replaceWith(alt);
     } else {
