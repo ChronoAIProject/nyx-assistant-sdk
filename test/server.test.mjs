@@ -3,13 +3,13 @@ import { once } from "node:events";
 import test from "node:test";
 import { sdkServer } from "../server/server.mjs";
 
-test("static server forwards scoped child requests, streams Responses, and isolates origins", async t => {
-  const origin = "https://site.example";
+test("static server accepts any origin for scoped child requests and Responses streams", async t => {
+  const origin = "https://new-site.example";
   const requests = [];
-  const server = sdkServer({ upstreamOrigin: "https://id.example", origins: [origin],
+  const server = sdkServer({ upstreamOrigin: "https://id.example",
     request: async (url, options) => {
       const headers = new Headers(options.headers);
-      requests.push({ url, headers });
+      requests.push({ url, headers, method: options.method });
       if (url.endsWith("/self") && headers.get("authorization") !== "Bearer child") return Response.json({}, { status: 401 });
       if (url.endsWith("/responses")) return new Response("data: reply\n\n", { headers: { "content-type": "text/event-stream" } });
       return Response.json({ ok: true }, { headers: { "set-cookie": "private=1" } });
@@ -21,21 +21,44 @@ test("static server forwards scoped child requests, streams Responses, and isola
   const base = "http://127.0.0.1:" + server.address().port + "/api/v1/";
   const path = base + "proxy/s/llm-nyx/v1/responses";
   const post = { method: "POST", headers: { origin, authorization: "Bearer child", "content-type": "application/json", "idempotency-key": "example" }, body: "{}" };
-  const pre = await fetch(path, { method: "OPTIONS", headers: { origin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization,idempotency-key" } });
+  const preflightHeaders = { origin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization,content-type,idempotency-key" };
+  const pre = await fetch(path, { method: "OPTIONS", headers: preflightHeaders });
   assert.equal(pre.status, 204);
-  assert.equal(pre.headers.get("access-control-allow-origin"), origin);
+  assert.equal(pre.headers.get("access-control-allow-origin"), "*");
+  assert.equal(pre.headers.get("access-control-allow-methods"), "POST");
+  assert.match(pre.headers.get("access-control-allow-headers"), /\bauthorization\b/);
   assert.equal(pre.headers.has("access-control-allow-credentials"), false);
+  for (const headers of [
+    { ...preflightHeaders, "Access-Control-Request-Method": "DELETE" },
+    { ...preflightHeaders, "Access-Control-Request-Headers": "x-unsupported" },
+  ]) assert.equal((await fetch(path, { method: "OPTIONS", headers })).status, 403);
+  assert.equal(requests.length, 0);
   const result = await fetch(path, post);
+  assert.equal(result.headers.get("access-control-allow-origin"), "*");
   assert.equal(await result.text(), "data: reply\n\n");
   assert.equal(result.headers.get("content-type"), "text/event-stream");
   assert.deepEqual(requests.map(row => new URL(row.url).pathname), ["/api/v1/auth/agent-key/self", "/api/v1/proxy/s/llm-nyx/v1/responses"]);
   assert.equal(requests[1].headers.get("idempotency-key"), "example");
   assert.equal(requests[1].headers.has("origin"), false);
-  assert.equal((await fetch(path, { ...post, headers: { ...post.headers, authorization: "Bearer parent" } })).status, 401);
+  const denied = await fetch(path, { ...post, headers: { ...post.headers, authorization: "Bearer parent" } });
+  assert.equal(denied.status, 401);
+  assert.equal(denied.headers.get("access-control-allow-origin"), "*");
   assert.equal((await fetch(path, { ...post, headers: { ...post.headers, cookie: "session=fixture" } })).status, 403);
-  assert.equal((await fetch(path, { ...post, headers: { ...post.headers, origin: "https://other.example" } })).status, 403);
-  const child = await fetch(base + "auth/agent-key/self", { headers: { origin, authorization: "Bearer child" } });
-  assert.equal(child.headers.has("set-cookie"), false);
+  for (const operation of ["request", "poll"]) {
+    const result = await fetch(base + "auth/agent-key/" + operation, {
+      method: "POST", headers: { origin: "https://another-site.example", "content-type": "application/json" }, body: "{}",
+    });
+    assert.equal(result.headers.get("access-control-allow-origin"), "*");
+    assert.deepEqual(await result.json(), { ok: true });
+    assert.equal(new URL(requests.at(-1).url).pathname, "/api/v1/auth/agent-key/" + operation);
+  }
+  for (const method of ["GET", "DELETE"]) {
+    const child = await fetch(base + "auth/agent-key/self", { method, headers: { origin: "null", authorization: "Bearer child" } });
+    assert.equal(child.headers.get("access-control-allow-origin"), "*");
+    assert.equal(child.headers.has("set-cookie"), false);
+    assert.deepEqual(await child.json(), { ok: true });
+    assert.equal(requests.at(-1).method, method);
+  }
   assert.equal((await fetch(base + "auth/agent-key/approve", post)).status, 404);
   assert.equal((await fetch(path + "/original", { headers: { origin, authorization: "Bearer child" } })).status, 200);
 });
@@ -50,7 +73,7 @@ for (const event of ["deadline", "browser disconnect"]) {
     const stalled = Promise.withResolvers();
     const turn = Promise.withResolvers();
     let upstreamSignal;
-    const server = sdkServer({ upstreamOrigin: "https://id.example", origins: [],
+    const server = sdkServer({ upstreamOrigin: "https://id.example",
       request: async (url, options) => {
         if (url.endsWith("/self")) return new Response();
         if (options.method === "GET") return Response.json(await turn.promise);
@@ -125,15 +148,22 @@ test("browser voice uses a fixed upstream and authenticates the stream with the 
     ws.send('{"type":"snapshot"}');
     ws.on("message", (data, binary) => ws.send(data, { binary }));
   });
-  const relay = sdkServer({ upstreamOrigin: "http://127.0.0.1:" + remote.address().port, origins: [origin] }).listen(0, "127.0.0.1");
+  const relay = sdkServer({ upstreamOrigin: "http://127.0.0.1:" + remote.address().port }).listen(0, "127.0.0.1");
   await once(relay, "listening");
   const base = "http://127.0.0.1:" + relay.address().port;
   const headers = { origin, authorization: "Bearer child" };
   t.after(() => { for (const ws of sockets.clients) ws.terminate(); sockets.close(); remote.close(); relay.close(); });
-  assert.equal((await fetch(base + path + "options?conversation_id=one", { headers })).status, 200);
+  const options = await fetch(base + path + "options?conversation_id=one", { headers });
+  assert.equal(options.status, 200);
+  assert.equal(options.headers.get("access-control-allow-origin"), "*");
   assert.equal((await fetch(base + path + "sessions", { headers })).status, 405);
   assert.equal((await fetch(base + path + "agents", { headers: { ...headers, authorization: "Bearer parent" } })).status, 401);
   const url = base.replace("http:", "ws:") + path + "sessions/" + session + "/stream";
+  const unauthorized = new WebSocket(url, { origin });
+  await once(unauthorized, "open");
+  const closed = once(unauthorized, "close");
+  unauthorized.send(JSON.stringify({ type: "authenticate", credential: "parent" }));
+  assert.equal((await closed)[0], 1006);
   const ws = new WebSocket(url, { origin });
   await once(ws, "open");
   const ready = once(ws, "message");
@@ -150,7 +180,7 @@ test("browser voice uses a fixed upstream and authenticates the stream with the 
 
 test("temporary voice forwards SDP only to the selected OpenAI connection", async t => {
   const requests = [];
-  const server = sdkServer({ upstreamOrigin: "https://id.example", origins: [], request: async (url, options) => {
+  const server = sdkServer({ upstreamOrigin: "https://id.example", request: async (url, options) => {
     requests.push({ url, options });
     if (url.endsWith("/self")) return Response.json({api_key:{effective_services:[
       {id:"22caf9db-4c7d-4712-89e8-09c96c58489b",slug:"llm-openai",is_active:true},

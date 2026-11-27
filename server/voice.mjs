@@ -12,11 +12,11 @@ export function voiceMethods(path) {
   return [];
 }
 
-export function attachVoiceStreams(server, upstream, origins, request) {
+export function attachVoiceStreams(server, upstream, request) {
   const limit = 256 * 1024;
   const sockets = new WebSocketServer({ noServer: true, maxPayload: limit, perMessageDeflate: false });
   server.on("upgrade", (req, socket, head) => {
-    if (!stream.test(req.url) || !origins.has(req.headers.origin) || req.headers["sec-websocket-protocol"]) {
+    if (!stream.test(req.url) || req.headers["sec-websocket-protocol"]) {
       socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
       return;
     }

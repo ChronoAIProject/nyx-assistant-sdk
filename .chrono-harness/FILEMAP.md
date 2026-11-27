@@ -39,12 +39,13 @@
 | `test/authorization.test.ts` | 设备授权、有效服务、宿主身份、模拟 HTTP 和 Web Locks | Node 验证核验后的服务列表和权限管理链接、拒绝错误交付、复用原申请、并发连接共享可恢复和可撤销的子凭据 | 未知 |
 
 | `src/credential-storage.ts` | Web Crypto、idb-keyval、站点授权绑定 | BrowserAuthorization 加密恢复可撤销子凭据 | 一条源级密钥和每份授权一条密文 |
-| `server/server.mjs` | HTTP、固定 NyxID 上游、站点来源 | 静态挂件授权、流式 Responses 和恢复 | 聊天前一次 self 核验 |
-| `server/Dockerfile` | Node 和 server.mjs | chrono-cd 独立非 root 容器 | 镜像构建成本未知 |
-| `test/server.test.mjs` | server.mjs、受控的上游 | Node 检查子凭据契约和转发行为 | 未知 |
+| `server/server.mjs` | HTTP、固定 NyxID 上游、server/voice.mjs | 任意来源的静态挂件授权、流式 Responses 和恢复 | 聊天前一次 self 核验 |
+| `server/voice.mjs` | ws、固定 NyxID 上游、Bot Voice 路径和子凭据 | 网页及原生客户端调用语音控制和 WebSocket 会话 | WebSocket 每次连接一次 self 核验 |
+| `server/Dockerfile` | Node、server/server.mjs、server/voice.mjs 和 relay 依赖 | chrono-cd 独立非 root 容器 | 镜像构建成本未知 |
+| `test/server.test.mjs` | server/server.mjs、server/voice.mjs、受控的上游 | Node 检查跨域访问、子凭据契约和转发行为 | 未知 |
 | `.github/workflows/server-image.yml` | Dockerfile、转发与部署测试、GitHub 环境密钥、本次构建摘要 | GitHub Actions 构建 linux/amd64 镜像并部署对应 chrono-cd 应用 | 未知 |
 | `test/credential-storage.test.ts` | Web Crypto、模拟 IndexedDB、credential-storage.ts | 检验并发密钥创建、不可导出及授权隔离 | 未知 |
-| `server/README.md` | server 入口和 chrono-cd 配置 | 运维者配置固定上游和接入站点 | 未知 |
+| `server/README.md` | server 入口和 chrono-cd 配置 | 运维者配置固定上游，接入方核对跨域访问方式 | 未知 |
 | `infra/chrono-cd/app.json` | 初始 GHCR 摘要、来源和资源规格 | 运维者创建或重建生产转发服务 | 一份运行副本 |
 | `infra/chrono-cd/app.staging.json` | 初始 GHCR 摘要、Metaverse 测试站来源和资源规格 | 运维者创建或重建测试转发服务 | 一份运行副本 |
 | `infra/chrono-cd/deploy.mjs` | 工作流分支、环境、提交、GHCR 摘要、限定范围的 NyxID Key 和线上应用规格 | 工作流按摘要更新服务，核对修订、Pod 和公网探针 | 一次 PUT、至多三次 CD 读取及一次公网探针 |
