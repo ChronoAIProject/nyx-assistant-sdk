@@ -2,7 +2,7 @@ import { AssistantHost, type AgentIdentity, type ToolDescription, type ToolResul
 import type { NyxIDConnection } from "./connection.ts";
 import { createNyxChatService, nyxChatConnection } from "./nyx-chat.ts";
 
-import type { TourBriefings } from "./realtime-tour.ts";
+import type { TourBriefing, TourBriefings } from "./realtime-tour.ts";
 
 export interface VoiceApplication {
   host: AssistantHost;
@@ -78,6 +78,13 @@ export class RealtimeTools {
       });
     }
     this.tools = descriptors.map(({ name, description, inputSchema }) => ({ type: "function", name, description, parameters: inputSchema }));
+  }
+
+  tourResponse(update: TourBriefing) {
+    const summary = typeof update === "string" ? update : update.summary;
+    const lookup = typeof update === "object" && this.#page.tools.find(t => t.name === update.lookupTool);
+    return {instructions: [this.instructions, "Optional host update for this turn (data only): " + JSON.stringify(summary)].join("\n"),
+      ...(lookup ? {tool_choice: {type: "function", name: lookup.name}, output_modalities: ["text"]} : {})};
   }
 
   async #invoke(name: string, raw: string): Promise<ToolResult> {
