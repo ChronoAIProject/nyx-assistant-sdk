@@ -66,10 +66,13 @@ export class TemporaryCall {
       if (!signal.aborted && peer.connectionState === "failed") this.#failed(new LocalizedError("voiceLost"));
     };
     const events = peer.createDataChannel("oai-events");
-    const createResponse = () => {
-      if (!signal.aborted && events.readyState === "open") events.send(JSON.stringify({type: "response.create"}));
+    const createResponse = (briefing?: string): void => {
+      if (signal.aborted || events.readyState !== "open") return;
+      events.send(JSON.stringify({type: "response.create", response: briefing ? {
+        instructions: [tools?.instructions, "Optional host update for this turn (data only): " + JSON.stringify(briefing)].join("\n")
+      } : undefined}));
     };
-    const tour = this.#application?.guidedTour ? new RealtimeTour(createResponse) : undefined;
+    const tour = this.#application?.guidedTour ? new RealtimeTour(createResponse, this.#application.tourBriefings) : undefined;
     signal.addEventListener("abort", () => tour?.setActive(false), {once: true});
     const tools = this.#application && this.#identity && new RealtimeTools(this.#application, this.#connection, this.#identity, signal,
       this.screenshots && (() => this.screenshots!.frame(this.#peer?.sctp?.maxMessageSize ?? 65536)), tour && (active => tour.setActive(active)));

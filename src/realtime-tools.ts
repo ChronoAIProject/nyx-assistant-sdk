@@ -2,6 +2,8 @@ import { AssistantHost, type AgentIdentity, type ToolDescription, type ToolResul
 import type { NyxIDConnection } from "./connection.ts";
 import { createNyxChatService, nyxChatConnection } from "./nyx-chat.ts";
 
+import type { TourBriefings } from "./realtime-tour.ts";
+
 export interface VoiceApplication {
   host: AssistantHost;
   instructions(): string;
@@ -9,6 +11,7 @@ export interface VoiceApplication {
   captureAfter?: string;
   name?: string;
   guidedTour?: boolean;
+  tourBriefings?: TourBriefings;
   model?(): string | undefined;
 }
 
