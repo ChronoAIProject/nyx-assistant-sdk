@@ -111,6 +111,8 @@ nav a:hover, .text-link:hover { color: #fff; }
 }
 .primary { color: #171121; background: #c2afff; }
 .primary:hover { background: #d6c7ff; }
+.hero-actions [hidden] { display: none; }
+.intro #key-services { margin-top: .9rem; font-size: .9rem; overflow-wrap: anywhere; }
 .secondary { border-color: #44415a; background: #191824; }
 .secondary:hover { border-color: #9f8dd7; }
 .platforms { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem; margin-top: 1.55rem; color: #aaa6be; font-size: .78rem; }
@@ -128,7 +130,7 @@ nav a:hover, .text-link:hover { color: #fff; }
 .demo-title-group { display: flex; align-items: center; gap: .63rem; }
 .demo-icon { display: grid; width: 2rem; aspect-ratio: 1; place-items: center; color: #d1bfff; background: #382d52; border-radius: .5rem; font-size: 1rem; }
 .demo-top h2 { margin: 0; font-size: .99rem; }
-.demo-top p { margin: .16rem 0 0; color: var(--muted); font-size: .69rem; white-space: nowrap; }
+.demo-top p { margin: .16rem 0 0; color: var(--muted); font-size: .69rem; }
 .toggle { display: flex; align-items: center; gap: .44rem; font-size: .73rem; color: #d1cbe3; white-space: nowrap; }
 .toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .switch { position: relative; display: block; width: 1.87rem; height: 1.04rem; border-radius: 1rem; background: #504962; }
@@ -185,8 +187,19 @@ pre { margin: 0; padding: .73rem; color: #d8cdfa; white-space: pre-wrap; overflo
 .card-links { display: flex; flex-wrap: wrap; gap: .85rem 1.15rem; }
 .flow-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin: 1.4rem 0 0; }
 .flow dt { margin-bottom: .4rem; color: #dfd3ff; font-weight: 680; }
-.site-footer { border-top: 1px solid var(--line); }
+.site-footer { border-top: 1px solid var(--line); padding-bottom: 3.5rem; }
 .footer-inner { min-height: 5rem; }
+
+nyx-assistant {
+  color-scheme: dark;
+  --nyx-accent: var(--purple);
+  --nyx-accent-text: #171121;
+  --nyx-surface: var(--surface);
+  --nyx-text: #f5f3ff;
+  --nyx-control-surface: #242033;
+  --nyx-muted: var(--muted);
+  --nyx-radius: 16px;
+}
 
 @media (max-width: 880px) {
   .shell { width: calc(100% - 3rem); }
@@ -207,3 +220,8 @@ pre { margin: 0; padding: .73rem; color: #d8cdfa; white-space: pre-wrap; overflo
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
+
+.prompt-settings { margin-top: 1rem; font-size: .88rem; color: var(--muted); }
+.prompt-settings summary { cursor: pointer; width: fit-content; }
+.prompt-settings label { display: grid; gap: .3rem; margin-top: .75rem; }
+.prompt-settings textarea { resize: vertical; font: inherit; color: inherit; background: #161422; border: 1px solid #4b465d; border-radius: .45rem; padding: .5rem; }

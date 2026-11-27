@@ -54,6 +54,9 @@ test("a restored child is checked against live NyxID permissions before use", as
   });
   const grant = await flow.restore(new AbortController().signal);
   assert.equal(grant?.ownerId, "person");
+  assert.deepEqual(grant?.access, {
+    services: ["llm-nyx"], managementUrl: "https://id.example/keys/api-key/test-key",
+  });
   const encrypted = local.getItem(flow.credentialStorageKey)!;
   assert.match(encrypted, /^nyx-sealed:v1:/);
   assert.ok(!encrypted.includes("child-only"));
@@ -79,6 +82,39 @@ test("a changed scope revokes only the delivered child, a transient failure pres
   await assert.rejects(flow.restore(new AbortController().signal), /撤销/);
   assert.deepEqual(calls,["GET","GET","DELETE"]);
   assert.equal(flow.hasSavedGrant,false);
+});
+
+test("legacy widget authorization still checks services, scopes and connection IDs on restore", async t => {
+  const services = ["chrono-llm-public", "llm-nyx", "llm-openai"];
+  const local = storage();
+  const options = { services, credentialStorage: local, clientLabel: "Test" };
+  const row = (slug: string) => ({ id: slug, slug, catalog_service_slug: slug, is_active: true });
+  const rows = [...services, "nyxbot-voice"].map(row);
+  const key = { ...current.api_key, effective_services: rows, allowed_service_ids: rows.map(r => r.id) };
+  let delivered = key;
+  let revoked = 0;
+  t.mock.method(globalThis, "fetch", async (_url: URL, init: RequestInit) => {
+    if (init.method === "DELETE") { revoked++; return new Response(null, { status: 204 }); }
+    return Response.json({ ...current, api_key: delivered });
+  });
+  const cases = [
+    { name: "explicit service list", legacy: false, key },
+    { name: "missing OpenAI", key: { ...key, effective_services: rows.filter(r => r.slug !== "llm-openai"),
+      allowed_service_ids: key.allowed_service_ids.filter(id => id !== "llm-openai") } },
+    { name: "another service", key: { ...key, effective_services: [...rows, row("extra")], allowed_service_ids: [...key.allowed_service_ids, "extra"] } },
+    { name: "published bot", key: { ...key, effective_services: rows.map(r => r.slug === "nyxbot-voice" ? { ...r, slug: "nyxbot-voice-instance" } : r) } },
+    { name: "all services", key: { ...key, allow_all_services: true } },
+    { name: "scope beyond proxy and read", key: { ...key, scopes: "proxy write" } },
+    { name: "another connection ID", key: { ...key, allowed_service_ids: [...key.allowed_service_ids, "extra"] } },
+  ];
+  for (const candidate of cases) {
+    delivered = candidate.key;
+    const flow = new BrowserAuthorization({ ...options, acceptLegacyVoiceCatalog: candidate.legacy ?? true });
+    local.setItem(flow.credentialStorageKey, "child-only");
+    await assert.rejects(flow.restore(new AbortController().signal), /撤销/, candidate.name);
+    assert.equal(flow.hasSavedGrant, false, candidate.name);
+  }
+  assert.equal(revoked, cases.length);
 });
 test("the pending challenge resumes from the same tab without creating a second request", async t => {
   Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
@@ -184,4 +220,29 @@ test("overlapping persistent connects share one child and disconnect is recovera
   assert.equal(active, false);
   assert.equal(local.length, 0);
   assert.deepEqual(await Promise.all([first.restore(signal), second.restore(signal)]), [undefined, undefined]);
+});
+
+test("browser defaults restore a saved grant, while memory mode and unavailable storage leave it alone", async t => {
+  const local = storage();
+  const browser = { localStorage: local, indexedDB, crypto, navigator };
+  Object.defineProperty(globalThis, "window", { configurable: true, value: browser });
+  t.after(() => Reflect.deleteProperty(globalThis, "window"));
+
+  const options = { base: "https://api.example", verificationOrigin: "https://id.example",
+    services: ["llm-nyx"], clientLabel: "Test" };
+  const flow = new BrowserAuthorization(options);
+  local.setItem(flow.credentialStorageKey, "saved-child");
+  let lookups = 0;
+  t.mock.method(globalThis, "fetch", async (_url: URL, init: RequestInit) => {
+    assert.equal(new Headers(init.headers).get("authorization"), "Bearer saved-child");
+    lookups++;
+    return Response.json(current);
+  });
+  const signal = new AbortController().signal;
+  assert.equal((await flow.restore(signal))?.keyId, "test-key");
+  assert.match(local.getItem(flow.credentialStorageKey)!, /^nyx-sealed:v1:/);
+  assert.equal(await new BrowserAuthorization({ ...options, credentialStorage: null }).restore(signal), undefined);
+  Object.defineProperty(browser, "localStorage", { get() { throw new DOMException("Blocked", "SecurityError"); } });
+  assert.equal(await new BrowserAuthorization(options).restore(signal), undefined);
+  assert.equal(lookups, 1);
 });

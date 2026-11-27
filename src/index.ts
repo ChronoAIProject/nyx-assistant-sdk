@@ -1,5 +1,8 @@
+import { LocalizedError, translate, diagnosticLocale } from "./i18n.ts";
 import { z } from "zod";
+export { LocalizedError } from "./i18n.ts";
 export { z } from "zod";
+export type { AgentIdentity } from "./agent-identity.ts";
 export { NyxIDConnection } from "./connection.ts";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -54,6 +57,7 @@ interface Pending {
 
 /** One host per window and identity. Dispose on logout or window teardown. */
 export class AssistantHost {
+  language: string = diagnosticLocale;
   readonly instanceId = crypto.randomUUID();
   readonly #service: NyxIDService;
   readonly #context: () => Json;
@@ -94,9 +98,9 @@ export class AssistantHost {
   }): () => void {
     this.#lifetime.signal.throwIfAborted();
     if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(tool.name) || !tool.description.trim()) {
-      throw new Error("Invalid tool name or description");
+      throw new LocalizedError("invalidToolDefinition", "", this.language);
     }
-    if (this.#tools.has(tool.name)) throw new Error("Tool already registered");
+    if (this.#tools.has(tool.name)) throw new LocalizedError("duplicateTool", "", this.language);
     const schema = tool.parameters.strict();
     const registered: RegisteredTool = {
       descriptor: {
@@ -104,14 +108,14 @@ export class AssistantHost {
         inputSchema: z.toJSONSchema(schema, { io: "input" }),
       },
       lifetime: new AbortController(),
-      async invoke(args, signal) {
+      invoke: async (args, signal) => {
         const parsed = schema.safeParse(args);
-        if (!parsed.success) return { ok: false, code: "invalid_arguments", message: "Arguments do not match this tool's schema." };
+        if (!parsed.success) return { ok: false, code: "invalid_arguments", message: translate(this.language, "invalidArguments") };
         try {
           signal.throwIfAborted();
           return await tool.execute(parsed.data as z.output<T>, signal);
         } catch {
-          return { ok: false, code: "outcome_unknown", message: "Verify the host state before retrying." };
+          return { ok: false, code: "outcome_unknown", message: translate(this.language, "outcomeUnknown") };
         }
       },
     };
@@ -119,6 +123,24 @@ export class AssistantHost {
     return () => {
       registered.lifetime.abort();
       if (this.#tools.get(tool.name) === registered) this.#tools.delete(tool.name);
+    };
+  }
+
+  /** Capture the tools offered to one model session. Removed or replaced bindings cannot run. */
+  captureTools() {
+    this.#lifetime.signal.throwIfAborted();
+    const bindings = new Map(this.#tools);
+    return {
+      tools: structuredClone([...bindings.values()].map(tool => tool.descriptor)),
+      context: () => { this.#lifetime.signal.throwIfAborted(); return structuredClone(this.#context()); },
+      invoke: async (name: string, args: unknown, signal: AbortSignal): Promise<ToolResult> => {
+        signal.throwIfAborted();
+        this.#lifetime.signal.throwIfAborted();
+        const tool = bindings.get(name);
+        if (!tool || this.#tools.get(name) !== tool)
+          return { ok: false, code: "tool_unavailable", message: translate(this.language, "toolUnavailable") };
+        return tool.invoke(args, AbortSignal.any([signal, tool.lifetime.signal, this.#lifetime.signal]));
+      },
     };
   }
 
@@ -135,8 +157,8 @@ export class AssistantHost {
 
   send(text: string): Promise<string> {
     this.#lifetime.signal.throwIfAborted();
-    if (!text.trim()) throw new Error("Message is empty");
-    if (this.#active || this.#pending) throw new Error("A turn is active or needs recovery");
+    if (!text.trim()) throw new LocalizedError("emptyMessage", "", this.language);
+    if (this.#active || this.#pending) throw new LocalizedError("activeTurn", "", this.language);
     this.#pending = this.#prepare({ type: "user", text }, 0);
     return this.resume();
   }
@@ -157,7 +179,7 @@ export class AssistantHost {
 
   async resume(): Promise<string> {
     this.#lifetime.signal.throwIfAborted();
-    if (this.#active || !this.#pending) throw new Error("No interrupted turn to resume");
+    if (this.#active || !this.#pending) throw new LocalizedError("nothingToResume", "", this.language);
     const active = new AbortController();
     this.#active = active;
     try {
@@ -168,25 +190,25 @@ export class AssistantHost {
           text => { if (!active.signal.aborted) this.#emit({ type: "text", text }); });
         active.signal.throwIfAborted();
         if (!reply.conversationId || (this.#conversationId && reply.conversationId !== this.#conversationId)) {
-          throw new Error("Service changed the conversation identity");
+          throw new LocalizedError("conversationChanged", "", this.language);
         }
         this.#conversationId = reply.conversationId;
         if (reply.type === "answer") {
           this.#pending = undefined;
           return reply.text;
         }
-        if (!reply.callId || pending.calls >= 16) throw new Error("Invalid or excessive tool calls");
+        if (!reply.callId || pending.calls >= 16) throw new LocalizedError("excessiveCalls", "", this.language);
         // Prepare the continuation before executing anything that can change the host.
         const resultInput: TurnInput = { type: "tool_result", name: reply.name, callId: reply.callId,
-          result: { ok: false, code: "outcome_unknown", message: "Verify the host state before retrying." } };
+          result: { ok: false, code: "outcome_unknown", message: translate(this.language, "outcomeUnknown") } };
         const next = this.#prepare(resultInput, pending.calls + 1);
         this.#pending = next;
         const tool = pending.bindings.get(reply.name);
-        let result: ToolResult = { ok: false, code: "tool_unavailable", message: "Tool is unavailable in this instance." };
+        let result: ToolResult = { ok: false, code: "tool_unavailable", message: translate(this.language, "toolUnavailable") };
         const args = JSON.stringify(reply.arguments);
         const existing = this.#receipts.get(reply.callId);
         if (existing && (existing.name !== reply.name || existing.args !== args)) {
-          result = { ok: false, code: "call_conflict", message: "Call ID was already used for another request." };
+          result = { ok: false, code: "call_conflict", message: translate(this.language, "callConflict") };
         } else if (tool && this.#tools.get(reply.name) === tool) {
           result = existing?.result ?? await tool.invoke(reply.arguments, AbortSignal.any([active.signal, tool.lifetime.signal]));
         }
@@ -197,7 +219,12 @@ export class AssistantHost {
         this.#pending = this.#prepare(next.request.input, next.calls);
         this.#emit({ type: "tool_result", name: reply.name, callId: reply.callId, result });
       }
-      throw new Error("Host closed");
+      throw new LocalizedError("hostClosed", "", this.language);
+    } catch (error) {
+      if (error instanceof LocalizedError && error.message !== error.localize(this.language)) {
+        throw new LocalizedError(error.key, error.value, this.language, { cause: error });
+      }
+      throw error;
     } finally {
       this.#active = undefined;
     }

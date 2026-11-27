@@ -1,3 +1,5 @@
+import { LocalizedError } from "./i18n.ts";
+import type { AgentIdentity } from "./agent-identity.ts";
 import type { NyxIDConnection } from "./connection.ts";
 import { createParser } from "eventsource-parser";
 import { z } from "zod";
@@ -30,51 +32,75 @@ export const nyxHostInstructions = [
 export function decodeNyxReply(value: unknown, request: Pick<TurnRequest, "requestId" | "conversationId">): ServiceReply {
   const response = storedResponse.parse(value);
   if (request.conversationId && response.conversation.id !== request.conversationId) {
-    throw new Error("NyxID returned a different conversation");
+    throw new LocalizedError("differentConversation");
   }
-  if (response.status !== "completed") throw new Error(`Nyx turn is ${response.status}`);
+  if (response.status !== "completed") throw new LocalizedError("turnStatus", String(response.status));
   const text = response.output
     .filter(item => item.type === "message" && item.role === "assistant")
-    .flatMap(item => (item.content ?? []).filter(part => part.type === "output_text").map(part => part.text ?? ""))
-    .join("\n").trim();
+    .map(item => (item.content ?? []).filter(part => part.type === "output_text").map(part => part.text ?? "").join(""))
+    .join("\n");
   const conversationId = response.conversation.id;
-  if (!text) throw new Error("Missing assistant message in completed response");
+  if (!text.trim()) throw new LocalizedError("missingReply");
   if (!text.includes(marker)) return { type: "answer", conversationId, text };
-  const match = /(?:^|\n)```nyx-host-call[ \t]*\r?\n([^]*?)\r?\n```$/.exec(text);
-  if (!match || text.indexOf(marker) !== text.lastIndexOf(marker)) throw new Error("Malformed host tool request");
-  const call = action.parse(JSON.parse(match[1]));
-  if (call.requestId !== request.requestId) throw new Error("Stale host tool request");
+  const block = text.trim();
+  const start = block.indexOf(marker);
+  const bodyStart = block.indexOf("\n", start);
+  const bodyEnd = block.lastIndexOf("\n");
+  if ((start > 0 && block[start - 1] !== "\n") || start !== block.lastIndexOf(marker) ||
+      bodyStart < 0 || bodyStart >= bodyEnd || block.slice(bodyEnd + 1) !== "```" ||
+      !/^[ \t]*\r?$/.test(block.slice(start + marker.length, bodyStart))) {
+    throw new LocalizedError("invalidTool");
+  }
+  const call = action.parse(JSON.parse(block.slice(bodyStart + 1, bodyEnd)));
+  if (call.requestId !== request.requestId) throw new LocalizedError("staleTool");
   return { type: "call", conversationId, callId: response.id, name: call.name, arguments: call.arguments };
 }
 
+type ResponseIdentity = { id: string; conversationId: string };
+type Service = AgentIdentity["services"][number];
+export function nyxChatConnection(identity?: AgentIdentity) {
+  const active = identity?.services.filter(row => row.active && (row.catalogSlug ?? row.slug) === "llm-nyx");
+  return active?.find(row => row.slug === "llm-nyx") ?? active?.[0];
+}
+function requestChat(connection: NyxIDConnection, service: Service | undefined, path: string[], init: RequestInit) {
+  return service ? connection.requestService(service, path, init) : connection.request("llm-nyx", path, init);
+}
+
+export async function lookupNyxReply(connection: NyxIDConnection, turn: Pick<TurnRequest, "requestId" | "conversationId">, prior: ResponseIdentity, signal: AbortSignal, service?: Service) {
+  const res = await requestChat(connection, service, ["v1", "responses", prior.id], { signal, cache: "no-store", redirect: "error" });
+  if (!res.ok) throw new LocalizedError("lookupHttp", String(res.status));
+  const original = storedResponse.parse(await res.json());
+  if (original.id !== prior.id || original.conversation.id !== prior.conversationId) throw new LocalizedError("lookupChanged");
+  return decodeNyxReply(original, turn);
+}
+
 /** Bind one adapter to one NyxID identity for the life of a host. */
-export function createNyxChatService(connection: NyxIDConnection): NyxIDService {
+export function createNyxChatService(connection: NyxIDConnection, options: { service?: Service; instructions?: string | (() => string | undefined); checkpoint?: (requestId: string, response?: ResponseIdentity) => void } = {}): NyxIDService {
   const observed = new Map<string, { id: string; conversationId: string }>();
   return {
     async turn(turn, signal, onText) {
       const prior = observed.get(turn.requestId);
       if (prior) {
-        const res = await connection.request("llm-nyx", ["v1", "responses", prior.id], { signal, cache: "no-store", redirect: "error" });
-        if (!res.ok) throw new Error(`NyxID response lookup returned HTTP ${res.status}`);
-        const original = storedResponse.parse(await res.json());
-        if (original.id !== prior.id || original.conversation.id !== prior.conversationId) throw new Error("NyxID lookup identity changed");
-        const reply = decodeNyxReply(original, turn);
+        const reply = await lookupNyxReply(connection, turn, prior, signal, options.service);
         observed.delete(turn.requestId);
         return reply;
       }
-      const res = await connection.request("llm-nyx", ["v1", "responses"], {
+      options.checkpoint?.(turn.requestId);
+      const instructions = typeof options.instructions === "function" ? options.instructions() : options.instructions;
+      const res = await requestChat(connection, options.service, ["v1", "responses"], {
         method: "POST", signal, redirect: "error", cache: "no-store",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream", "Idempotency-Key": turn.requestId },
         body: JSON.stringify({
-          model: "nyxagent/chat", instructions: nyxHostInstructions, store: true, stream: true,
+          model: "nyxagent/chat", instructions: [nyxHostInstructions, instructions].filter(Boolean).join("\n"), store: true, stream: true,
           input: JSON.stringify(turn), ...(turn.conversationId ? { conversation: turn.conversationId } : {}),
         }),
       });
-      if (!res.ok) throw new Error(`NyxID turn returned HTTP ${res.status}`);
+      if (!res.ok) throw new LocalizedError("turnHttp", String(res.status));
       if (res.headers.get("content-type")?.startsWith("application/json")) return decodeNyxReply(await res.json(), turn);
-      if (!res.body || !res.headers.get("content-type")?.startsWith("text/event-stream")) throw new Error("Expected NyxID response stream");
+      if (!res.body || !res.headers.get("content-type")?.startsWith("text/event-stream")) throw new LocalizedError("badStream");
       let reply: ServiceReply | undefined;
       const parser = createParser({ onEvent(event) {
+        signal.throwIfAborted();
         if (event.data === "[DONE]" || reply) return;
         const frame = JSON.parse(event.data);
         const type = frame.type ?? event.event;
@@ -83,10 +109,13 @@ export function createNyxChatService(connection: NyxIDConnection): NyxIDService 
           const { id, conversation } = identity.parse(frame.response);
           const seen = observed.get(turn.requestId);
           if ((turn.conversationId && conversation.id !== turn.conversationId) || (seen && (id !== seen.id || conversation.id !== seen.conversationId))) {
-            throw new Error("NyxID stream identity changed");
+            throw new LocalizedError("streamChanged");
           }
-          observed.set(turn.requestId, { id, conversationId: conversation.id });
-          if (type === "response.failed") throw new Error("NyxID reported a failed turn");
+          if (!seen) {
+            observed.set(turn.requestId, { id, conversationId: conversation.id });
+            options.checkpoint?.(turn.requestId, { id, conversationId: conversation.id });
+          }
+          if (type === "response.failed") throw new LocalizedError("failedTurn");
           if (type === "response.completed") reply = decodeNyxReply(frame.response, turn);
         }
       } });
@@ -97,10 +126,10 @@ export function createNyxChatService(connection: NyxIDConnection): NyxIDService 
           const chunk = await reader.read();
           if (chunk.done) break;
           received += chunk.value.length;
-          if (received > 8 * 1024 * 1024) throw new Error("NyxID response stream is too large");
+          if (received > 8 * 1024 * 1024) throw new LocalizedError("largeStream");
           parser.feed(chunk.value);
         }
-        if (!reply) throw new Error("NyxID stream ended without a confirmed result");
+        if (!reply) throw new LocalizedError("streamEnded");
         observed.delete(turn.requestId);
         return reply;
       } finally {

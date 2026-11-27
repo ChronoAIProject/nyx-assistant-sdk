@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 
 const licenses = await Promise.all(
-  ["zod", "eventsource-parser"].map(async (name) => {
+  ["zod", "eventsource-parser", "marked", "marked-cjk-friendly", "dompurify"].map(async (name) => {
     const file = new URL(
       "../node_modules/" + name + "/LICENSE",
       import.meta.url,
@@ -11,7 +11,7 @@ const licenses = await Promise.all(
   }),
 );
 await build({
-  entryPoints: ["src/widget.ts"],
+  entryPoints: ["src/widget-script.ts"],
   outfile: "browser/nyx-widget.js",
   bundle: true,
   format: "iife",

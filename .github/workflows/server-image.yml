@@ -34,6 +34,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 24
+      - run: npm ci --prefix server --ignore-scripts
       - run: node --test test/server.test.mjs infra/chrono-cd/deploy.test.mjs
 
   publish:

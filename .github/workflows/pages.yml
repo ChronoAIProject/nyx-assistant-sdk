@@ -4,6 +4,7 @@ on:
     paths: &site_inputs
       - .github/workflows/pages.yml
       - site/**
+      - browser/nyx-widget.js
       - examples/web/tickets.js
       - scripts/build-site.mjs
       - scripts/build-widget.mjs
