@@ -63,7 +63,8 @@
 | `src/widget-voice.ts` | 当前授权、Bot Voice 选项和字幕 | 挂件选择 Bot 和模型，开始或挂断通话 | 仅展开语音时查询 |
 | `src/relay.ts` | SDK 包版本 | 挂件和示例页选择官方转发服务 | 构建时读取 |
 | `src/realtime-tools.ts` | 当前页面、已授权连接和实时模型的函数调用 | 临时语音读取页面上下文、执行注册工具及请求 Nyx 服务 | 按通话调用 |
-| `src/realtime-tour.ts` | 实时音频播放、用户语音与工具响应事件 | 导览会话在播放结束后衔接下一段 | 每通导览一个可取消定时器 |
+| `test/realtime-tools.test.ts` | 页面工具、模拟实时事件、导览摘要和时钟 | Node 验证工具执行、自然续讲、暂停与摘要生命周期 | 未知 |
+| `src/realtime-tour.ts` | 实时音频播放、用户语音、工具响应事件与宿主页的可选摘要 | 导览会话在自然衔接时读取当轮摘要，暂停时释放收集器 | 每通导览一个可取消定时器 |
 | `src/tab-screenshot.ts` | 当前标签页授权、Capture Handle、WebRTC 消息大小 | 临时通话按需提供当前页 JPEG | 最长边 1024 像素，每次调用一帧 |
 | `src/temporary-call.ts` | 已授权 OpenAI 连接、宿主页的 data-voice-model、麦克风、WebRTC | 挂件临时语音通话与字幕 | 通话时传输音频和核验授权 |
 | `src/widget-call.ts` | 麦克风、VoiceClient、WebRTC、Web Audio | 挂件双向音频和播放进度 | 通话时启用设备和心跳 |

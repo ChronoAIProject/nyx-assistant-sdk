@@ -1,6 +1,6 @@
 {
   "name": "@chronoai/nyx-assistant-sdk",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "NyxID client SDK for exposing a host application's context and tools to an authorized service",
   "type": "module",
   "exports": {

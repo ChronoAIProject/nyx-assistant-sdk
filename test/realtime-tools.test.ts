@@ -113,3 +113,33 @@ test("a guided turn resumes after audio drains, and yields to tools, speech and 
   t.mock.timers.tick(5000);
   assert.equal(next, 1);
 });
+
+test("briefings belong to an active tour and reach only its natural continuations", t => {
+  t.mock.timers.enable({apis: ["setTimeout"]});
+  const periods: AbortSignal[] = [], turns: (string | undefined)[] = [];
+  let reads = 0;
+  const tour = new RealtimeTour(note => turns.push(note), signal => {
+    periods.push(signal);
+    return () => {
+      if (++reads > 1) throw new Error("unavailable");
+      return "a".repeat(500);
+    };
+  });
+  const tick = () => t.mock.timers.tick(5000);
+  tour.observe({type: "response.done"}); tick();
+  assert.equal(periods.length, 0);
+  tour.setActive(true); tour.setActive(true);
+  assert.equal(periods.length, 1);
+  tour.observe({type: "output_audio_buffer.started"});
+  tour.observe({type: "response.done"}); tick();
+  assert.equal(reads, 0);
+  tour.observe({type: "output_audio_buffer.stopped"}); tick();
+  assert.deepEqual(turns, ["a".repeat(384)]);
+  tour.observe({type: "response.done"}); tour.setActive(false); tick();
+  assert.ok(periods[0].aborted);
+  assert.equal(reads, 1);
+  tour.setActive(true);
+  assert.equal(periods.length, 2);
+  tour.observe({type: "response.done"}); tick();
+  assert.deepEqual(turns, ["a".repeat(384), undefined]);
+});
