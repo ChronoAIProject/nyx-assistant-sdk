@@ -49,7 +49,7 @@ export class RealtimeTools {
     const descriptors: ToolDescription[] = [...this.#page.tools, {
       name: "_page_context", description: "Read the current application context.", inputSchema: z.toJSONSchema(empty),
     }];
-    if (setTourActive) descriptors.push({name: "_tour_playback", description: "Pause automatic tour turns when asked to pause, or resume them when asked to continue.", inputSchema: z.toJSONSchema(playback)});
+    if (setTourActive) descriptors.push({name: "_tour_playback", description: "Start ongoing tour turns when the visitor asks to begin. Also use this to pause or resume at their request.", inputSchema: z.toJSONSchema(playback)});
     if (screenshot) descriptors.push({name: "_page_screenshot", description: "Look at a fresh image of the shared dashboard tab.", inputSchema: z.toJSONSchema(empty)});
     const services = [...new Set(identity.services.filter(s => s.active).map(s => s.catalogSlug ?? s.slug))];
     const service = nyxChatConnection(identity);
