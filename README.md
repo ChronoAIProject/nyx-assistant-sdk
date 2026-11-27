@@ -11,7 +11,7 @@ SDK 官网的「免登录试用」可直接读取或切换演示工单的筛选�
 在 HTML 加入一行脚本，页面会出现「Nyx 助手」按钮。脚本也随 npm 包提供，可复制 `browser/nyx-widget.js` 到自己的静态站点。
 
 ```html
-<script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.2.0/browser/nyx-widget.js" data-proxy="/"></script>
+<script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.2.1/browser/nyx-widget.js" data-proxy="/"></script>
 ```
 
 `data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。独立转发服务部署于 chrono-cd，使用 `data-nyxid` 指向服务地址，并设置 `data-verification-origin="https://nyxid.ai"`。任意来源的页面均可接入转发服务。网页挂件和 `BrowserAuthorization` 默认记住本次登录。同一浏览器再次打开页面或刷新时，挂件会自动核验并恢复。显式设置 `data-storage="memory"`（自建 UI 传 `credentialStorage: null`）可仅在当前页面使用授权。默认模式在缺少 Web Locks、Web Crypto 或无法访问本地存储时使用内存。同源标签页按站点配置依次连接并复用已保存的授权。挂件通过 Web Crypto 的 AES-GCM 加密子凭据，密文保存在站点 localStorage，不可导出的密钥存于该源的 IndexedDB。浏览器恢复时先迁移 alpha.4 的明文记录，再向 NyxID 核验。能在同源运行的脚本仍然可以使用已授权的凭据。断开授权会撤销当前子凭据并通知同源标签页。
@@ -30,7 +30,7 @@ SDK 官网的「免登录试用」可直接读取或切换演示工单的筛选�
 
 ### 在页面上配置提示词和工具
 
-`data-instructions` 是共用提示词。文字请求会追加 `data-text-instructions`，临时语音拨号时会追加 `data-voice-instructions`。这些属性可以写在自动挂载的脚本或 `<nyx-assistant>` 上。JavaScript 属性分别为 `instructions`、`textInstructions`、`voiceInstructions`。更新后在下一条文字请求或下次临时通话生效。
+`data-instructions` 是共用提示词。文字请求会追加 `data-text-instructions`，临时语音拨号时会追加 `data-voice-instructions`。临时 OpenAI 通话可通过 `data-voice-model="gpt-realtime-2.1"` 指定接入模型，默认值为 `gpt-realtime`。这些属性可以写在自动挂载的脚本或 `<nyx-assistant>` 上。JavaScript 属性分别为 `instructions`、`textInstructions`、`voiceInstructions`。更新后在下一条文字请求或下次临时通话生效。
 
 ```html
 <nyx-assistant data-instructions="你是这个工单页面的助手。"
@@ -151,7 +151,7 @@ npm pack
 接入方也可以安装已经发布的固定版本。
 
 ```sh
-npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.2.0/chronoai-nyx-assistant-sdk-0.2.0.tgz
+npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.2.1/chronoai-nyx-assistant-sdk-0.2.1.tgz
 ```
 
 运行端需要 Fetch、Web Streams、Web Crypto 和 AbortSignal.any。应用可以使用自己的聊天界面。
