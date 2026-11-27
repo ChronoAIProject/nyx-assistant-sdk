@@ -2,6 +2,7 @@ import { LocalizedError, translate, diagnosticLocale } from "./i18n.ts";
 import { z } from "zod";
 export { LocalizedError } from "./i18n.ts";
 export { z } from "zod";
+export type { AgentIdentity } from "./agent-identity.ts";
 export { NyxIDConnection } from "./connection.ts";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -122,6 +123,24 @@ export class AssistantHost {
     return () => {
       registered.lifetime.abort();
       if (this.#tools.get(tool.name) === registered) this.#tools.delete(tool.name);
+    };
+  }
+
+  /** Capture the tools offered to one model session. Removed or replaced bindings cannot run. */
+  captureTools() {
+    this.#lifetime.signal.throwIfAborted();
+    const bindings = new Map(this.#tools);
+    return {
+      tools: structuredClone([...bindings.values()].map(tool => tool.descriptor)),
+      context: () => { this.#lifetime.signal.throwIfAborted(); return structuredClone(this.#context()); },
+      invoke: async (name: string, args: unknown, signal: AbortSignal): Promise<ToolResult> => {
+        signal.throwIfAborted();
+        this.#lifetime.signal.throwIfAborted();
+        const tool = bindings.get(name);
+        if (!tool || this.#tools.get(name) !== tool)
+          return { ok: false, code: "tool_unavailable", message: translate(this.language, "toolUnavailable") };
+        return tool.invoke(args, AbortSignal.any([signal, tool.lifetime.signal, this.#lifetime.signal]));
+      },
     };
   }
 

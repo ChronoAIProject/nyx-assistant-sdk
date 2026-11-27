@@ -83,6 +83,39 @@ test("a changed scope revokes only the delivered child, a transient failure pres
   assert.deepEqual(calls,["GET","GET","DELETE"]);
   assert.equal(flow.hasSavedGrant,false);
 });
+
+test("legacy widget authorization still checks services, scopes and connection IDs on restore", async t => {
+  const services = ["chrono-llm-public", "llm-nyx", "llm-openai"];
+  const local = storage();
+  const options = { services, credentialStorage: local, clientLabel: "Test" };
+  const row = (slug: string) => ({ id: slug, slug, catalog_service_slug: slug, is_active: true });
+  const rows = [...services, "nyxbot-voice"].map(row);
+  const key = { ...current.api_key, effective_services: rows, allowed_service_ids: rows.map(r => r.id) };
+  let delivered = key;
+  let revoked = 0;
+  t.mock.method(globalThis, "fetch", async (_url: URL, init: RequestInit) => {
+    if (init.method === "DELETE") { revoked++; return new Response(null, { status: 204 }); }
+    return Response.json({ ...current, api_key: delivered });
+  });
+  const cases = [
+    { name: "explicit service list", legacy: false, key },
+    { name: "missing OpenAI", key: { ...key, effective_services: rows.filter(r => r.slug !== "llm-openai"),
+      allowed_service_ids: key.allowed_service_ids.filter(id => id !== "llm-openai") } },
+    { name: "another service", key: { ...key, effective_services: [...rows, row("extra")], allowed_service_ids: [...key.allowed_service_ids, "extra"] } },
+    { name: "published bot", key: { ...key, effective_services: rows.map(r => r.slug === "nyxbot-voice" ? { ...r, slug: "nyxbot-voice-instance" } : r) } },
+    { name: "all services", key: { ...key, allow_all_services: true } },
+    { name: "scope beyond proxy and read", key: { ...key, scopes: "proxy write" } },
+    { name: "another connection ID", key: { ...key, allowed_service_ids: [...key.allowed_service_ids, "extra"] } },
+  ];
+  for (const candidate of cases) {
+    delivered = candidate.key;
+    const flow = new BrowserAuthorization({ ...options, acceptLegacyVoiceCatalog: candidate.legacy ?? true });
+    local.setItem(flow.credentialStorageKey, "child-only");
+    await assert.rejects(flow.restore(new AbortController().signal), /撤销/, candidate.name);
+    assert.equal(flow.hasSavedGrant, false, candidate.name);
+  }
+  assert.equal(revoked, cases.length);
+});
 test("the pending challenge resumes from the same tab without creating a second request", async t => {
   Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
   const tab = storage();

@@ -1,15 +1,18 @@
 import { LocalizedError, type MessageKey, resolveLocale, translate } from "./i18n.ts";
 import { AssistantHost, type Json, NyxIDConnection, z } from "./index.ts";
 import { WidgetSession } from "./widget-session.ts";
-import { createNyxChatService, lookupNyxReply } from "./nyx-chat.ts";
+import { createNyxChatService, lookupNyxReply, nyxChatConnection } from "./nyx-chat.ts";
 import { BrowserAuthorization, type PreviousGrant } from "./widget-auth.ts";
 import { widgetStyle } from "./widget-style.ts";
 import { renderAssistantMarkdown } from "./markdown.ts";
+
+import { WidgetVoice } from "./widget-voice.ts";
 
 type BrowserGrant = Awaited<ReturnType<BrowserAuthorization["connect"]>>;
 
 export class NyxAssistantElement extends HTMLElement {
   #root = this.attachShadow({ mode: "open" });
+  #voice: WidgetVoice;
   #host?: AssistantHost;
   #login?: { controller: AbortController; restoreOnly: boolean };
   #grant?: BrowserGrant;
@@ -23,7 +26,14 @@ export class NyxAssistantElement extends HTMLElement {
     title: this.ownerDocument.title,
     language: this.lang || this.ownerDocument.documentElement.lang || this.#locale,
   });
-  instructions?: string;
+  declare instructions?: string;
+  declare textInstructions?: string;
+  declare voiceInstructions?: string;
+  #instructions(mode: "text" | "voice") {
+    const specific = mode === "text" ? this.textInstructions ?? this.dataset.textInstructions :
+      this.voiceInstructions ?? this.dataset.voiceInstructions;
+    return [this.instructions ?? this.dataset.instructions, specific].filter(Boolean).join("\n");
+  }
   previousGrant?: () => PreviousGrant | undefined;
   get busy() { return this.#busy; }
   get access() { return this.#host ? this.#grant?.access : undefined; }
@@ -34,7 +44,7 @@ export class NyxAssistantElement extends HTMLElement {
     return z;
   }
 
-  static observedAttributes = ["lang"];
+  static observedAttributes = ["lang", "data-voice"];
   #status?: { key: MessageKey; value?: string; diagnostic?: string };
 
   #locale = resolveLocale();
@@ -74,8 +84,22 @@ export class NyxAssistantElement extends HTMLElement {
     this.#el(".disconnect").textContent = this.#text(this.#login?.restoreOnly === false ? "cancelApproval" : "disconnect");
     if (this.access) this.#el(".access p").textContent = this.access.services.join(this.#text("separator"));
     this.#renderStatus();
+    this.#voice.localize();
   }
-  attributeChangedCallback() { this.#renderLabels(); }
+  get voiceEnabled() { return this.dataset.voice !== "false"; }
+  set voiceEnabled(enabled: boolean) { this.dataset.voice = String(enabled); }
+  attributeChangedCallback(name: string) {
+    if (name === "data-voice") {
+      if (this.#authorization && this.dataset.services !== "@key") {
+        this.#authorization.cancel();
+        void this.#release();
+        this.#authorization = undefined;
+        if (this.isConnected && this.dataset.storage !== "memory") void this.#connect(true);
+      }
+      if (!this.voiceEnabled) void this.#voice.reset();
+      this.#controls();
+    } else this.#renderLabels();
+  }
 
   constructor() {
     super();
@@ -94,11 +118,14 @@ export class NyxAssistantElement extends HTMLElement {
           <p class="connect-hint" data-label="hint"></p>
           <button class="connect" part="primary-action" type="button" data-label="connect"></button>
           <form part="composer" hidden><textarea rows="1" part="input" data-aria="message" required></textarea>
+            <button class="voice-toggle" type="button" part="voice-button" data-aria="voiceCall" aria-expanded="false"><span aria-hidden="true" class="wave"><i></i><i></i><i></i><i></i><i></i></span><span data-label="voiceCall"></span></button>
             <button class="send" part="primary-action send" type="submit" data-aria="send"><span class="send-label" data-label="send"></span><span class="send-icon" aria-hidden="true">↑</span></button></form>
+          <div class="voice" hidden></div>
           <button class="resume" hidden type="button" data-label="resume"></button>
           <button class="reset" hidden type="button" data-label="reset"></button>
         </div>
       </section>`;
+    this.#voice = new WidgetVoice(this.#el(".voice"), this.#el(".voice-toggle"), this.#el(".chat"), (key, value) => this.#text(key, value), () => this.#controls());
     this.#renderLabels();
     this.#el(".launch").onclick = () => this.#open(this.#el(".panel").hidden);
     const prompts = this.#el<HTMLSlotElement>('slot[name="prompt"]');
@@ -109,6 +136,7 @@ export class NyxAssistantElement extends HTMLElement {
       if (!(button instanceof HTMLButtonElement) || !this.#host || this.#busy) return;
       const input = this.#el<HTMLTextAreaElement>("textarea");
       input.value = button.dataset.prompt || button.textContent.trim();
+      this.#controls();
       input.focus();
     });
     this.#el(".close").onclick = () => this.#open(false);
@@ -133,6 +161,7 @@ export class NyxAssistantElement extends HTMLElement {
       session.save({ messages: [] });
       this.#bind(this.#connection, this.#grant, session);
     };
+    this.#el("textarea").oninput = () => this.#controls();
     this.#el("textarea").onkeydown = (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
@@ -191,13 +220,14 @@ export class NyxAssistantElement extends HTMLElement {
     const revoke = this.#revoking ? undefined : this.#grant?.revoke;
     this.#grant = undefined;
     this.#revoking = false;
-    this.#clearView();
-    return (this.#authorization?.persistent ? undefined : revoke?.())?.catch(() => {
+    const persistent = this.#authorization?.persistent;
+    return this.#clearView().then(() => persistent ? undefined : revoke?.()).catch(() => {
       if (!this.#host)
         this.#showStatus("verifyRevoke");
     });
   }
   #clearView() {
+    const released = this.#voice.setConnection();
     this.#recovery?.abort();
     this.#session = undefined;
     this.#connection = undefined;
@@ -216,6 +246,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#showStatus();
     this.#el(".verify").hidden = true;
     this.#controls();
+    return released;
   }
   /** Bind a credential-bound connection on login or identity change. */
   bind(connection: NyxIDConnection) {
@@ -227,7 +258,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#connection = connection;
     this.#session = session;
     const host = new AssistantHost(createNyxChatService(connection, {
-      instructions: this.instructions,
+      service: nyxChatConnection(grant?.identity), instructions: () => this.#instructions("text"),
       checkpoint: (requestId, response) => {
         if (session && this.#session === session) session.save({ ...session.state, pending: { requestId, ...response } });
       },
@@ -236,6 +267,8 @@ export class NyxAssistantElement extends HTMLElement {
     host.language = this.#locale;
     this.#host = host;
     this.#grant = grant;
+    this.#voice.setConnection(connection, grant?.access.managementUrl, grant ? this.#voiceService : "auto",
+      { host, instructions: () => this.#instructions("voice") });
     if (grant) {
       this.#el(".access p").textContent = grant.access.services.join(this.#text("separator"));
       this.#el<HTMLAnchorElement>(".access a").href = grant.access.managementUrl;
@@ -250,18 +283,32 @@ export class NyxAssistantElement extends HTMLElement {
       }),
     );
   }
+  get #baseServices() {
+    return (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim()).filter(Boolean);
+  }
+  get #voiceService() {
+    if (this.dataset.services === "@key") return "auto";
+    return this.#baseServices.includes("nyxbot-voice") ? "nyxbot-voice" : "llm-openai";
+  }
   #createFlow() {
-    const base = new URL(this.dataset.nyxid || "https://nyx.chrono-ai.fun");
     let storage: Storage | undefined;
     let credentialStorage: Storage | null | undefined;
     if (this.dataset.storage === "local") credentialStorage = localStorage;
     else if (this.dataset.storage !== undefined) credentialStorage = null;
     try { storage = sessionStorage; } catch { /* Storage is optional for this visit. */ }
-    const services = (this.dataset.services ?? "llm-nyx,chrono-llm-public").split(",").map(s => s.trim());
+    const voiceService = this.#voiceService;
+    const services = voiceService === "auto" ? "@key" : this.#baseServices.filter(s => s !== "nyxbot-voice");
+    if (services !== "@key" && this.voiceEnabled) services.push(voiceService);
     return new BrowserAuthorization({
       language: this.#locale,
-      base, verificationOrigin: this.dataset.verificationOrigin || base.origin, services, storage, credentialStorage,
-      previousGrant: this.previousGrant, ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined, catalogServices: this.dataset.catalogServices?.split(","), clientLabel: location.hostname, keySource: this.dataset.keySource === "new" ? "new" : "existing",
+      base: this.dataset.nyxid, verificationOrigin: this.dataset.verificationOrigin,
+      services, storage, credentialStorage,
+      acceptLegacyVoiceCatalog: this.voiceEnabled && this.dataset.services === undefined,
+      previousGrant: this.previousGrant,
+      ownerId: this.dataset.ownerId, ownerType: this.dataset.ownerId ? "personal" : undefined,
+      catalogServices: this.dataset.catalogServices?.split(","),
+      clientLabel: location.hostname,
+      keySource: (this.dataset.keySource ?? (services === "@key" ? "existing" : "new")) === "new" ? "new" : "existing",
     });
   }
   /** Open the widget and start or resume its NyxID connection. */
@@ -311,7 +358,7 @@ export class NyxAssistantElement extends HTMLElement {
         if (session.state.pending.id) void this.#recover();
         else this.#showStatus("missingResponse");
       }
-      if (!this.#el(".panel").hidden) this.#el("textarea").focus();
+      if (!this.#el(".panel").hidden) this.#el(this.#el("textarea").hidden ? ".voice-toggle" : "textarea").focus();
     } catch (error) {
       if (!signal.aborted)
         this.#showError(error, "connectFailed");
@@ -333,10 +380,11 @@ export class NyxAssistantElement extends HTMLElement {
       return;
     }
     this.#revoking = true;
-    this.#clearView();
+    const voiceEnded = this.#clearView();
     this.#showStatus("revoking");
     let failed = false;
     try {
+      await voiceEnded;
       await revoke();
     } catch {
       failed = true;
@@ -354,13 +402,22 @@ export class NyxAssistantElement extends HTMLElement {
     const waitingForApproval = this.#login?.restoreOnly === false;
     const disconnect = this.#el<HTMLButtonElement>(".disconnect");
     this.#el(".connect").hidden = Boolean(this.#host || this.#login || this.#grant);
+    const textarea = this.#el<HTMLTextAreaElement>("textarea");
+    const voiceOnly = this.voiceEnabled && this.#grant?.access.services.length === 1 &&
+      ["llm-openai", "nyxbot-voice"].includes(this.#grant.access.services[0]!);
+    textarea.hidden = Boolean(voiceOnly);
+    const hasDraft = !voiceOnly && Boolean(textarea.value.trim());
+    const offerVoice = this.voiceEnabled && !hasDraft && !this.#busy && !pending;
+    this.#el(".voice-toggle").hidden = !offerVoice;
+    this.#el(".send").hidden = offerVoice;
+    this.#el(".voice").hidden = !this.voiceEnabled || !this.#voice.open;
     this.#el(".connect-hint").hidden = this.#el(".connect").hidden;
     disconnect.hidden = !this.#grant && !waitingForApproval;
     disconnect.disabled = this.#revoking;
     disconnect.textContent = this.#text(waitingForApproval ? "cancelApproval" : "disconnect");
-    this.#el("form").hidden = !this.#host;
+    this.#el("form").hidden = !this.#host || this.#voice.open;
     this.#el(".panel").toggleAttribute("data-connected", Boolean(this.#host));
-    this.#el(".starters").hidden = !this.#host || this.#busy || pending ||
+    this.#el(".starters").hidden = !!voiceOnly || !this.#host || this.#voice.open || this.#busy || pending ||
       this.#el(".chat").childElementCount > 0 ||
       !this.#el<HTMLSlotElement>('slot[name="prompt"]').assignedElements().length;
     this.#el<HTMLButtonElement>(".send").disabled = this.#busy || pending;
@@ -373,7 +430,7 @@ export class NyxAssistantElement extends HTMLElement {
     launch.hidden = open && this.getAttribute("layout") !== "anchored";
     launch.setAttribute("aria-expanded", String(open));
     let focus = ".connect";
-    if (this.#host) focus = "textarea";
+    if (this.#host) focus = this.#el("textarea").hidden ? ".voice-toggle" : "textarea";
     else if (this.#login || this.#revoking) focus = ".close";
     else if (this.#grant) focus = ".disconnect";
     this.#el(open ? focus : ".launch").focus();
@@ -408,7 +465,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#busy = true;
     this.#controls();
     try {
-      const reply = await lookupNyxReply(this.#connection, pending, { id: pending.id, conversationId: pending.conversationId }, controller.signal);
+      const reply = await lookupNyxReply(this.#connection, pending, { id: pending.id, conversationId: pending.conversationId }, controller.signal, nyxChatConnection(this.#grant?.identity));
       if (controller.signal.aborted) return;
       if (reply.type !== "answer") throw new LocalizedError("previousAction");
       session.message(reply.text, false, reply.conversationId);

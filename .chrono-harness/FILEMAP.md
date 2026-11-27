@@ -12,7 +12,10 @@
 | `src/index.ts` | 服务接口、上下文、i18n.ts、Zod 工具定义及处理函数 | 各宿主创建实例，订阅、发送、执行和恢复 | 取决于宿主处理函数 |
 | `src/nyx-chat.ts` | 连接、核心契约、i18n.ts、Responses SSE 和已保存响应 | Nyx 聊天适配器执行或续接一轮 | 每步一次请求，实际推理成本未知 |
 | `test/host.test.ts` | 核心与模拟服务 | Node 验证实例、权限、调用、恢复与宿主诊断语言 | 未知 |
+| `src/agent-identity.ts` | Agent Key self 响应 | `NyxIDConnection` 和授权流程解析当前 Key、精确服务连接和授权范围 | 每次身份读取一次响应解析 |
+| `src/voice.ts` | Agent Key 身份、精确 Voice UserService、WebRTC SDP、控制 WebSocket 和 xAI PCM16 音频 | nyx-panel 等设备宿主发现固定 Bot、创建 Voice 会话、收发语音、发送心跳和控制 | 每次发现、选项、启动或控制一次服务请求，通话媒体成本未知 |
 | `test/nyx-chat.test.ts` | 核心、连接、适配器与模拟 HTTP | Node 验证线上的请求形状及结果关联 | 未知 |
+| `test/voice.test.ts` | Voice 身份选择、精确服务路由、模拟 HTTP 和控制 socket | Node 验证 Agent Key Voice 的服务绑定、启动、PCM 收发和控制契约 | 未知 |
 | `examples/web/index.html` | 筛选与聊天表单 | 网页用户查看行数、发送请求 | 未知 |
 | `examples/web/app.js` | HTML、站点语言目录、SDK 与宿主表格状态 | 网页用户读取和修改筛选 | 未知 |
 | `examples/web/tickets.js` | 工单样例数据、本地化文案、筛选和只读控件、SDK 注册工具接口 | 本机示例和 SDK 官网共同显示筛选结果并执行权限检查 | 每次变更重画可见行 |
@@ -57,3 +60,11 @@
 
 | `src/i18n.ts` | messages.ts、语言偏好与带参数的消息编号 | SDK 宿主、连接、挂件、Markdown、授权和聊天适配器按当前语言读取控件与诊断 | 随挂件打包 |
 | `test/widget-language.test.ts` | jsdom、挂件、模拟授权响应 | 验证页面与浏览器语言选择、回退、保留会话和草稿并更新含 HTTP 状态的错误 | 未知 |
+| `src/widget-voice.ts` | 当前授权、Bot Voice 选项和字幕 | 挂件选择 Bot 和模型，开始或挂断通话 | 仅展开语音时查询 |
+| `src/relay.ts` | SDK 包版本 | 挂件和示例页选择官方转发服务 | 构建时读取 |
+| `src/realtime-tools.ts` | 当前页面、已授权连接和实时模型的函数调用 | 临时语音读取页面上下文、执行注册工具及请求 Nyx 服务 | 按通话调用 |
+| `src/temporary-call.ts` | 已授权 OpenAI 连接、麦克风、WebRTC | 挂件临时语音通话与字幕 | 通话时传输音频和核验授权 |
+| `src/widget-call.ts` | 麦克风、VoiceClient、WebRTC、Web Audio | 挂件双向音频和播放进度 | 通话时启用设备和心跳 |
+| `server/voice.mjs` | 站点来源、子凭据和固定上游 | 网页语音 HTTP 和 WebSocket 转发 | 通话期间两条 WebSocket |
+| `server/package.json` | ws 的固定版本 | 转发服务安装和镜像构建 | 一个运行时依赖 |
+| `server/package-lock.json` | 包版本和完整性 | 重建转发服务依赖 | 一份锁文件 |

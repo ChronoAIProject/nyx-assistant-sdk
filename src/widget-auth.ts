@@ -1,7 +1,9 @@
+import { agentIdentity, agentKeyResponse } from "./agent-identity.ts";
 import { defaultLocale, LocalizedError, type MessageKey } from "./i18n.ts";
 import { NyxIDConnection } from "./connection.ts";
 import { isSealed, openCredential, sealCredential } from "./credential-storage.ts";
 import { z } from "zod";
+import { officialRelay } from "./relay.ts";
 
 const serviceSlug = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
 const challenge = z.object({
@@ -14,15 +16,7 @@ const challenge = z.object({
 const enrollment = challenge.extend({
   expiresAt: z.number().finite(), nextPollAt: z.number().finite(),
 });
-const keySummary = z.object({
-  id: z.string().min(1), owner_id: z.string().min(1), owner_type: z.string().optional(), scopes: z.string(),
-  allow_all_services: z.literal(false), allow_auto_connected_services: z.literal(false),
-  allow_all_nodes: z.literal(false), allowed_node_ids: z.array(z.string()).length(0),
-  allowed_service_ids: z.array(z.string()).min(1),
-  effective_services: z.array(z.object({
-    id: z.string(), slug: serviceSlug, catalog_service_slug: serviceSlug.nullish(), is_active: z.literal(true),
-  })).min(1),
-});
+
 
 export interface PreviousGrant {
   credential: string;
@@ -32,9 +26,12 @@ export interface PreviousGrant {
 export interface BrowserAuthorizationOptions {
   language?: string;
   previousGrant?: () => PreviousGrant | undefined;
-  base: string | URL;
-  verificationOrigin: string;
-  services: readonly string[];
+  base?: string | URL;
+  verificationOrigin?: string;
+  /** Explicit service slugs for a restricted grant, or the grants on the key approved at NyxID. */
+  services: readonly string[] | "@key";
+  /** Allow the single generic Bot Voice catalog connection on older default widget keys. */
+  acceptLegacyVoiceCatalog?: boolean;
   keySource?: "existing" | "new";
   ownerId?: string;
   ownerType?: "personal";
@@ -57,6 +54,26 @@ function defaultCredentialStorage() {
   } catch { /* Browser storage access can be denied for this origin. */ }
 }
 
+function matchesRequestedServices(key: z.infer<typeof agentKeyResponse>["api_key"], requested: string[], acceptLegacyVoiceCatalog = false) {
+  const rows = key.effective_services;
+  const services = new Set(rows.map(row => row.catalog_service_slug ?? row.slug));
+  if (acceptLegacyVoiceCatalog && !requested.includes("nyxbot-voice")) {
+    const voice = rows.filter(row => (row.catalog_service_slug ?? row.slug) === "nyxbot-voice");
+    if (voice.length === 1 && voice[0]?.slug === "nyxbot-voice" && voice[0].catalog_service_slug === "nyxbot-voice") {
+      services.delete("nyxbot-voice");
+    }
+  }
+  const ids = new Set(rows.map(row => row.id));
+  const scopes = key.scopes.trim().split(/\s+/);
+  return !key.allow_all_services && !key.allow_auto_connected_services && !key.allow_all_nodes &&
+    key.allowed_node_ids.length === 0 &&
+    scopes.includes("proxy") && scopes.every(s => s === "proxy" || s === "read") &&
+    rows.every(s => s.is_active && serviceSlug.safeParse(s.slug).success &&
+      (s.catalog_service_slug == null || serviceSlug.safeParse(s.catalog_service_slug).success)) &&
+    services.size === requested.length && requested.every(s => services.has(s)) &&
+    ids.size === new Set(key.allowed_service_ids).size && key.allowed_service_ids.every(id => ids.has(id));
+}
+
 function sleepUntil(timestamp: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
     signal.throwIfAborted();
@@ -73,7 +90,7 @@ function sleepUntil(timestamp: number, signal: AbortSignal) {
 export class BrowserAuthorization {
   readonly #base: URL;
   readonly #origin: string;
-  readonly #services: string[];
+  readonly #services: string[] | "@key";
   readonly #options: BrowserAuthorizationOptions;
   readonly #storageKey: string;
   #active?: AbortController;
@@ -83,13 +100,13 @@ export class BrowserAuthorization {
   }
 
   constructor(options: BrowserAuthorizationOptions) {
-    this.#base = new URL(options.base);
+    this.#base = new URL(options.base ?? officialRelay);
     new NyxIDConnection(this.#base);
     this.#base.pathname = this.#base.pathname.replace(/\/?$/, "/");
-    const verification = new URL(options.verificationOrigin);
+    const verification = new URL(options.verificationOrigin ?? ([officialRelay, "https://nyx-assistant-sdk-chronoai.apps.nyxid.ai"].includes(this.#base.origin) ? "https://nyxid.ai" : this.#base.origin));
     new NyxIDConnection(verification);
     this.#origin = verification.origin;
-    this.#services = [...new Set(z.array(serviceSlug).min(1).parse(options.services))].sort();
+    this.#services = options.services === "@key" ? "@key" : [...new Set(z.array(serviceSlug).min(1).parse(options.services))].sort();
     this.#options = { ...options };
     if (options.credentialStorage === undefined) this.#options.credentialStorage = defaultCredentialStorage();
     this.#storageKey = "nyx-assistant:pending:" + JSON.stringify([
@@ -226,7 +243,7 @@ export class BrowserAuthorization {
     let pending = this.#saved();
     if (!pending) {
       const reply = await this.#request("request", {
-        requested_profile: "nyx-widget", client_label: this.#options.clientLabel,
+        requested_profile: this.#services === "@key" ? undefined : "nyx-widget", client_label: this.#options.clientLabel,
         client_app: "nyx-assistant-sdk", client_form_factor: "browser",
       }, active);
       if (!reply.ok) throw this.#error("approvalFailed", String(reply.status));
@@ -240,7 +257,7 @@ export class BrowserAuthorization {
     }
     url.search = new URLSearchParams({
       user_code: pending.user_code, login_type: "agent", key_source: this.#options.keySource ?? "existing",
-      permissions: "proxy", services: this.#services.join(","),
+      ...(this.#services === "@key" ? {} : { permissions: "proxy", services: this.#services.join(",") }),
     }).toString();
     active.throwIfAborted();
     const store = this.#options.storage;
@@ -276,17 +293,13 @@ export class BrowserAuthorization {
       if (!response.ok && response.status !== 401) throw this.#error("revokeFailed");
       if (record) this.#forget(record);
     };
-    const parsed = z.object({ credential_id: z.string().min(1), api_key: keySummary }).safeParse(delivery);
+    const parsed = agentKeyResponse.safeParse(delivery);
     const key = parsed.data?.api_key;
-    const services = new Set(key?.effective_services.map(row => row.catalog_service_slug ?? row.slug));
-    const ids = new Set(key?.effective_services.map(row => row.id));
-    const scopes = key?.scopes.trim().split(/\s+/) ?? [];
-    if (signal.aborted || !key || (this.#options.ownerId && key.owner_id !== this.#options.ownerId) ||
+    const identity = parsed.data && agentIdentity(parsed.data);
+    if (signal.aborted || !key || !identity || (this.#options.ownerId && key.owner_id !== this.#options.ownerId) ||
         (this.#options.ownerType && key.owner_type !== this.#options.ownerType) ||
         this.#options.catalogServices?.some(slug => !key.effective_services.some(row => row.catalog_service_slug === slug)) ||
-        !scopes.includes("proxy") || scopes.some(s => s !== "proxy" && s !== "read") ||
-        services.size !== this.#services.length || this.#services.some(s => !services.has(s)) ||
-        ids.size !== new Set(key.allowed_service_ids).size || key.allowed_service_ids.some(id => !ids.has(id))) {
+        (this.#services !== "@key" && !matchesRequestedServices(key, this.#services, this.#options.acceptLegacyVoiceCatalog))) {
       await revokeChild();
       throw this.#error("invalidGrant");
     }
@@ -298,16 +311,13 @@ export class BrowserAuthorization {
       }
       catch { await revokeChild(); throw this.#error("saveGrantFailed"); }
     }
-    const connection = new NyxIDConnection(this.#base, (input, init) => {
-      const headers = new Headers(init?.headers);
-      headers.set("Authorization", "Bearer " + credential);
-      return fetch(input, { ...init, credentials: "omit", headers });
-    });
+    const connection = NyxIDConnection.fromAgentKey(this.#base, credential);
     const revoke = () => this.#withGrantLock(undefined, revokeChild);
+    const services = new Set(identity.services.map(row => row.catalogSlug ?? row.slug));
     const access = Object.freeze({
       services: Object.freeze([...services].sort()),
       managementUrl: new URL("/keys/api-key/" + encodeURIComponent(key.id), this.#origin).href,
     });
-    return { connection, revoke, access, ownerId: key.owner_id, keyId: key.id, credentialId: parsed.data!.credential_id };
+    return { identity, connection, revoke, access, managementUrl: access.managementUrl, ownerId: key.owner_id, keyId: key.id, credentialId: identity.credentialId };
   }
 }

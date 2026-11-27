@@ -13,6 +13,10 @@ const copy = locales[document.documentElement.dataset.locale as keyof typeof loc
 const list = new Intl.ListFormat(copy.lang);
 const tickets = mountTickets(copy.tickets);
 const widget = document.querySelector<NyxAssistantElement>("nyx-assistant")!;
+for (const [id, key] of [["text-instructions", "textInstructions"], ["voice-instructions", "voiceInstructions"]] as const) {
+  const field = document.getElementById(id) as HTMLTextAreaElement;
+  field.addEventListener("input", () => { widget.dataset[key] = field.value; });
+}
 const connect = document.querySelector<HTMLButtonElement>("#connect-nyxid")!;
 const manage = document.querySelector<HTMLAnchorElement>("#manage-key")!;
 const services = document.querySelector<HTMLElement>("#key-services")!;
