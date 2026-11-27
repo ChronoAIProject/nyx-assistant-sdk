@@ -87,7 +87,7 @@ export class TemporaryCall {
     const form = new FormData();
     form.append("sdp", sdp);
     form.append("session", JSON.stringify({
-      type: "realtime", model: "gpt-realtime",
+      type: "realtime", model: this.#application?.model?.()?.trim() || "gpt-realtime",
       instructions: tools?.instructions ?? "You are a voice assistant. Reply briefly in the language the user speaks.",
       tools: tools?.tools,
       audio: { input: { transcription: { model: "whisper-1" } } },

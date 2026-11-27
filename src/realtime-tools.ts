@@ -5,6 +5,7 @@ import { createNyxChatService, nyxChatConnection } from "./nyx-chat.ts";
 export interface VoiceApplication {
   host: AssistantHost;
   instructions(): string;
+  model?(): string | undefined;
 }
 
 const serviceRequest = z.strictObject({ request: z.string().trim().min(1) });
