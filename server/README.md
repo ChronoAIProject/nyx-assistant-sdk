@@ -2,11 +2,11 @@
 
 The Docker service forwards browser Agent Key request, poll, self and Nyx Responses calls to a fixed NyxID API origin. Each authenticated Responses request verifies its child credential with NyxID. An admitted model request can complete when its browser disconnects. The client recovers the stored answer by response ID.
 
-Install relay dependencies with `npm ci --prefix server`. Run `node server/server.mjs` with `NYXID_ORIGIN` and comma-separated `SDK_ORIGINS`. The default upstream is `https://nyx-api.chrono-ai.fun`. The server listens on `PORT` (8080 by default), with `GET /healthz` for chrono-cd. The relay uses no service secret or database. Each site stores its own encrypted child credential and links to the NyxID verification origin.
+Install relay dependencies with `npm ci --prefix server`. Run `node server/server.mjs` with `NYXID_ORIGIN`. The default upstream is `https://nyx-api.chrono-ai.fun`. The server listens on `PORT` (8080 by default), with `GET /healthz` for chrono-cd. The relay uses no service secret or database. Browser HTTP requests from any origin can use the supported methods and headers with `credentials: "omit"`. Each site stores its own encrypted child credential and links to the NyxID verification origin.
 
 For temporary calls the relay forwards a multipart SDP offer to the selected OpenAI connection at `realtime/calls`. The browser and provider exchange audio over WebRTC.
 
-The relay also forwards Bot Voice discovery, options, sessions and controls. Browser WebSockets authenticate with a child credential in the first frame. The relay verifies the child and opens the exact NyxID session stream with its Authorization header. Configure the front proxy to forward WebSocket upgrades.
+The relay also forwards Bot Voice discovery, options, sessions and controls. Browser WebSockets from any origin authenticate with a child credential in the first frame. The relay verifies the child and opens the exact NyxID session stream with its Authorization header. Configure the front proxy to forward WebSocket upgrades.
 
 ## Continuous deployment
 
@@ -19,6 +19,6 @@ The [SDK server workflow](../.github/workflows/server-image.yml) runs the relay 
 
 Merge server changes into `dev` and verify the staging run. Promote to production by merging `dev` into `main`. The deploy job reads the live app, updates its image with an `If-Match` generation guard, then checks the applied revision, running Pod digest and public `/healthz`. The workflow summary records the verified revision and digest. [Metaverse deployment reference](https://github.com/ChronoAIProject/chrono-metaverse/blob/d1e0dd1132118f67dc422b5b3a85d7e3e83f53a2/.github/workflows/publish.yml)
 
-The [production spec](../infra/chrono-cd/app.json) and [staging spec](../infra/chrono-cd/app.staging.json) are bootstrap inputs. Review changes to site origins or other settings against the live spec in chrono-cd. After applying a configuration change, refresh the environment's key scope from the live app JSON with `node infra/chrono-cd/key-scope.mjs staging < live-app.json` (use `production` for `main`).
+The bootstrap specs retain `SDK_ORIGINS` for the older images they pin. The current relay accepts any origin out of the box, so rollout can use the existing image update. After applying a configuration change in chrono-cd, refresh the environment's key scope from the live app JSON with `node infra/chrono-cd/key-scope.mjs staging < live-app.json` (use `production` for `main`). [Production spec](../infra/chrono-cd/app.json) · [Staging spec](../infra/chrono-cd/app.staging.json)
 
 Each GitHub environment stores a separate `CHRONO_CD_API_KEY` with NyxID `proxy` scope for chrono-cd. The scope file limits GET app, GET status, and PUT app to one organization, project and application. The PUT permits changing only the image. Supply the generated JSON to `nyxid api-key operations` using `--service chrono-cd --inputs` and an `--allow-endpoint` for each of its three operation IDs. Update the environment secret when rotating its key.

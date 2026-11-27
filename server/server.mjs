@@ -83,25 +83,22 @@ function exactOrigin(input) {
   return url.origin;
 }
 
-export function sdkServer({ upstreamOrigin, origins, request = fetch }) {
+export function sdkServer({ upstreamOrigin, request = fetch }) {
   const upstream = exactOrigin(upstreamOrigin);
-  const allowed = new Set(origins.map(exactOrigin));
   const server = createServer(async (req, res) => {
     const path = req.url;
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Access-Control-Allow-Origin", "*");
     if (req.method === "GET" && path === "/healthz") { res.end("ok"); return; }
     const scoped = inferencePath.exec(path)?.groups;
     const verbs = methods(path, scoped);
     if (!verbs.length) return fail(res, 404, "unknown_route");
-    const origin = req.headers.origin;
-    res.setHeader("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
-    if (origin !== undefined && !allowed.has(origin)) return fail(res, 403, "origin_denied");
-    if (origin !== undefined) res.setHeader("Access-Control-Allow-Origin", origin);
     if (req.headers.cookie !== undefined) return fail(res, 403, "cookie_denied");
     if (req.method === "OPTIONS") {
+      res.setHeader("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
       const wanted = (req.headers["access-control-request-headers"] ?? "").toLowerCase().split(",").map(s => s.trim()).filter(Boolean);
-      if (!origin || !verbs.includes(req.headers["access-control-request-method"]) ||
+      if (!req.headers.origin || !verbs.includes(req.headers["access-control-request-method"]) ||
           !wanted.every(header => allowedHeaders.includes(header))) return fail(res, 403, "preflight_denied");
       res.writeHead(204, { "Access-Control-Allow-Methods": verbs.join(", "), "Access-Control-Allow-Headers": allowedHeaders.join(", ") });
       res.end(); return;
@@ -150,13 +147,12 @@ export function sdkServer({ upstreamOrigin, origins, request = fetch }) {
       res.off("close", cancel);
     }
   });
-  return attachVoiceStreams(server, upstream, allowed, request);
+  return attachVoiceStreams(server, upstream, request);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const server = sdkServer({
     upstreamOrigin: process.env.NYXID_ORIGIN ?? "https://nyx-api.chrono-ai.fun",
-    origins: (process.env.SDK_ORIGINS ?? "").split(",").map(s => s.trim()).filter(Boolean),
   });
   server.listen(Number(process.env.PORT ?? 8080), "0.0.0.0");
   process.once("SIGTERM", () => server.close());
