@@ -60,6 +60,7 @@ export class WidgetVoice {
       <div class="voice-actions">
         <button type="button" class="voice-start" data-label="voiceStart" hidden></button>
         <button type="button" class="voice-mute" hidden></button>
+        <button type="button" class="voice-share" hidden></button>
         <button type="button" class="voice-talk" data-label="voiceTalk" hidden></button>
         <button type="button" class="voice-end" data-label="voiceEnd" hidden></button>
       </div>`;
@@ -82,6 +83,15 @@ export class WidgetVoice {
       try { await call.mute(!this.#muted); }
       catch (error) { if (this.#call === call) this.#error(error); }
       finally { button.disabled = false; }
+    };
+    const share = this.#el<HTMLButtonElement>(".voice-share");
+    share.onclick = async () => {
+      const call = this.#call;
+      if (!(call instanceof TemporaryCall)) return;
+      share.disabled = true;
+      try { await call.toggleSharing(); if (call === this.#call) this.#setStatus("voiceLive"); }
+      catch { if (call === this.#call) this.#setStatus("shareHint"); }
+      finally { share.disabled = false; }
     };
     this.#select(".voice-bot").onchange = () => void this.#options();
     this.#select(".voice-provider").onchange = () => this.#ready();
@@ -141,6 +151,9 @@ export class WidgetVoice {
     this.localize();
   }
   localize() {
+    const sharing = this.#call instanceof TemporaryCall && !!this.#call.screenshots?.active;
+    this.#el(".voice-share").textContent = this.#text(sharing ? "stopShare" : "shareTab");
+    this.#el(".voice-share").setAttribute("aria-pressed", String(sharing));
     this.#el(".voice-mute").textContent = this.#text(this.#muted ? "voiceUnmute" : "voiceMute");
     this.#el(".voice-status").textContent = this.#status ? [this.#text(this.#status, this.#statusValue), this.#detail].filter(Boolean).join(" ") : "";
   }
@@ -160,7 +173,7 @@ export class WidgetVoice {
   }
   async #chooseTemporary(services: Service[]) {
     this.#temporary = services;
-    this.#el(".voice-name").textContent = this.#text("temporaryVoice");
+    this.#el(".voice-name").textContent = this.#app?.name || this.#text("temporaryVoice");
     const select = this.#select(".voice-provider");
     select.replaceChildren(...services.map(s => new Option(s.label + " · " + s.id.slice(0, 8), s.id)));
     if (services.length === 1) return this.#start();
@@ -271,6 +284,7 @@ export class WidgetVoice {
     const pcm = option?.voice?.protocol === "xai_realtime";
     const live = (muted: boolean, inputMuted = false) => {
       if (this.#call !== call) return;
+      this.#el(".voice-share").hidden = !(call instanceof TemporaryCall && call.screenshots);
       this.#muted = muted;
       this.#el(".voice-mute").setAttribute("aria-pressed", String(muted));
       this.#el(".voice-mute").hidden = false;
@@ -291,7 +305,7 @@ export class WidgetVoice {
     const call: TemporaryCall | WidgetCall = selected
       ? new TemporaryCall(this.#connection!, selected, live, (id, speaker, text) => {
           if (this.#call === call) this.#renderCaptions([{ id, speaker, text }]);
-        }, failed, this.#app, this.#identity)
+        }, failed, this.#app, this.#identity, () => this.localize())
       : new WidgetCall(this.#connection!, bot!.service, snapshot => {
           if (this.#call !== call) return;
           this.#renderCaptions(snapshot.captions ?? []);
@@ -347,6 +361,7 @@ export class WidgetVoice {
     const call = this.#call;
     if (!call) return this.#ending;
     this.#call = undefined;
+    this.#el(".voice-share").hidden = true;
     this.#el(".voice-end").hidden = this.#el(".voice-talk").hidden = true;
     clearInterval(this.#timer);
     this.#el(".voice-mute").hidden = this.#el(".voice-time").hidden = true;
