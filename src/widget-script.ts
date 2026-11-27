@@ -5,7 +5,7 @@ function mount() {
   if (document.querySelector("nyx-assistant")) return;
   const widget = document.createElement("nyx-assistant");
   for (const name of ["lang", "data-voice", "data-nyxid", "data-verification-origin", "data-proxy", "data-services", "data-key-source", "data-storage",
-    "data-instructions", "data-text-instructions", "data-voice-instructions"]) {
+    "data-voice-model", "data-instructions", "data-text-instructions", "data-voice-instructions"]) {
     if (script?.hasAttribute(name))
       widget.setAttribute(name, script.getAttribute(name)!);
   }
