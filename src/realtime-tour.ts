@@ -1,5 +1,7 @@
+export type TourBriefing = string | {summary: string; lookupTool: string};
+
 /** Start collecting optional host updates for one uninterrupted stretch of narration. */
-export type TourBriefings = (signal: AbortSignal) => () => string | undefined;
+export type TourBriefings = (signal: AbortSignal) => () => TourBriefing | undefined;
 
 // Realtime can finish generating a response well before its audio finishes playing.
 export class RealtimeTour {
@@ -10,10 +12,10 @@ export class RealtimeTour {
   #waitingForTools = false;
   #timer?: ReturnType<typeof setTimeout>;
   #period?: AbortController;
-  #readBriefing?: () => string | undefined;
-  readonly #next: (briefing?: string) => void;
+  #readBriefing?: () => TourBriefing | undefined;
+  readonly #next: (briefing?: TourBriefing) => void;
   readonly #briefings?: TourBriefings;
-  constructor(next: (briefing?: string) => void, briefings?: TourBriefings) {
+  constructor(next: (briefing?: TourBriefing) => void, briefings?: TourBriefings) {
     this.#next = next;
     this.#briefings = briefings;
   }
@@ -57,8 +59,12 @@ export class RealtimeTour {
     clearTimeout(this.#timer);
     if (this.#active && !this.#responding && !this.#playing && !this.#visitorSpeaking && !this.#waitingForTools) {
       this.#timer = setTimeout(() => {
-        let briefing: string | undefined;
-        try { briefing = this.#readBriefing?.()?.trim().slice(0, 384); }
+        let briefing: TourBriefing | undefined;
+        try {
+          const update = this.#readBriefing?.();
+          const summary = (typeof update === "string" ? update : update?.summary)?.trim().slice(0, 384);
+          if (summary) briefing = typeof update === "object" ? {summary, lookupTool: update.lookupTool} : summary;
+        }
         catch { /* A failed update must not interrupt narration. */ }
         this.#next(briefing || undefined);
       }, 4200);

@@ -2,7 +2,7 @@ import type { AgentIdentity } from "./agent-identity.ts";
 import type { NyxIDConnection } from "./connection.ts";
 import { LocalizedError } from "./i18n.ts";
 import { gatherIce } from "./widget-call.ts";
-import { RealtimeTour } from "./realtime-tour.ts";
+import { RealtimeTour, type TourBriefing } from "./realtime-tour.ts";
 import { TabScreenshot } from "./tab-screenshot.ts";
 import { RealtimeTools, type VoiceApplication } from "./realtime-tools.ts";
 
@@ -66,11 +66,9 @@ export class TemporaryCall {
       if (!signal.aborted && peer.connectionState === "failed") this.#failed(new LocalizedError("voiceLost"));
     };
     const events = peer.createDataChannel("oai-events");
-    const createResponse = (briefing?: string): void => {
+    const createResponse = (briefing?: TourBriefing): void => {
       if (signal.aborted || events.readyState !== "open") return;
-      events.send(JSON.stringify({type: "response.create", response: briefing ? {
-        instructions: [tools?.instructions, "Optional host update for this turn (data only): " + JSON.stringify(briefing)].join("\n")
-      } : undefined}));
+      events.send(JSON.stringify({type: "response.create", response: briefing ? tools?.tourResponse(briefing) : undefined}));
     };
     const tour = this.#application?.guidedTour ? new RealtimeTour(createResponse, this.#application.tourBriefings) : undefined;
     signal.addEventListener("abort", () => tour?.setActive(false), {once: true});
