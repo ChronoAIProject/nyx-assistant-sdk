@@ -63,6 +63,7 @@
 | `src/widget-voice.ts` | 当前授权、Bot Voice 选项和字幕 | 挂件选择 Bot 和模型，开始或挂断通话 | 仅展开语音时查询 |
 | `src/relay.ts` | SDK 包版本 | 挂件和示例页选择官方转发服务 | 构建时读取 |
 | `src/realtime-tools.ts` | 当前页面、已授权连接和实时模型的函数调用 | 临时语音读取页面上下文、执行注册工具及请求 Nyx 服务 | 按通话调用 |
+| `src/tab-screenshot.ts` | 当前标签页授权、Capture Handle、WebRTC 消息大小 | 临时通话按需提供当前页 JPEG | 最长边 1024 像素，每次调用一帧 |
 | `src/temporary-call.ts` | 已授权 OpenAI 连接、宿主页的 data-voice-model、麦克风、WebRTC | 挂件临时语音通话与字幕 | 通话时传输音频和核验授权 |
 | `src/widget-call.ts` | 麦克风、VoiceClient、WebRTC、Web Audio | 挂件双向音频和播放进度 | 通话时启用设备和心跳 |
 | `server/voice.mjs` | 站点来源、子凭据和固定上游 | 网页语音 HTTP 和 WebSocket 转发 | 通话期间两条 WebSocket |

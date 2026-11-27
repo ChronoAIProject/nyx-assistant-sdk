@@ -268,7 +268,7 @@ export class NyxAssistantElement extends HTMLElement {
     this.#host = host;
     this.#grant = grant;
     this.#voice.setConnection(connection, grant?.access.managementUrl, grant ? this.#voiceService : "auto",
-      { host, instructions: () => this.#instructions("voice"), model: () => this.dataset.voiceModel });
+      { host, name: this.dataset.voiceName?.trim(), guidedTour: this.dataset.voiceTour === "true", screenshots: this.dataset.voiceScreenshot === "true", instructions: () => this.#instructions("voice"), model: () => this.dataset.voiceModel });
     if (grant) {
       this.#el(".access p").textContent = grant.access.services.join(this.#text("separator"));
       this.#el<HTMLAnchorElement>(".access a").href = grant.access.managementUrl;

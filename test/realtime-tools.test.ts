@@ -9,8 +9,8 @@ function setup() {
     credentialId: "child", credentialExpiresAt: null, keyExpiresAt: null, scopes: ["proxy"],
     allowAllServices: false, allowAutoConnectedServices: false, services: [] };
   const controller = new AbortController();
-  const bind = () => new RealtimeTools({ host, instructions: () => "Speak softly" },
-    new NyxIDConnection("https://example.com"), identity, controller.signal);
+  const bind = (screenshot?: () => string | undefined, guidedTour = false) => new RealtimeTools({ host, guidedTour, instructions: () => "Speak softly" },
+    new NyxIDConnection("https://example.com"), identity, controller.signal, screenshot);
   return { host, controller, identity, bind };
 }
 const response = (name: string, args: string, id = "call1") => ({ status: "completed", output: [
@@ -53,4 +53,34 @@ test("hangup fences later output and queued calls", async () => {
   const next = tools.respond(response("wait", "{}", "second"), send);
   await entered.promise; controller.abort(); release.resolve(); await Promise.all([first, next]);
   assert.equal(calls, 1);
+});
+
+test("screenshots enter the Realtime conversation as image input only when shared", async () => {
+  const {bind} = setup();
+  let image: string | undefined;
+  const tools = bind(() => image);
+  const events: object[] = [];
+  const send = (event: object) => events.push(event);
+  await tools.respond(response("_page_screenshot", "{}"), send);
+  assert.match(JSON.stringify(events[0]), /unavailable/);
+  assert.equal(events.length, 2);
+  events.length = 0;
+  image = "data:image/jpeg;base64,/9j/";
+  await tools.respond(response("_page_screenshot", "{}", "shared"), send);
+  assert.doesNotMatch(JSON.stringify(events[0]), /base64/);
+  assert.deepEqual(events[1], {type: "conversation.item.create", item: {type: "message",
+    role: "user", content: [{type: "input_image", image_url: image}]}});
+  assert.deepEqual(events[2], {type: "response.create"});
+});
+
+test("guided calls can pause and resume silent-interval responses", async () => {
+  const {bind} = setup();
+  const tools = bind(undefined, true);
+  for (const active of [false, true]) {
+    const events: object[] = [];
+    await tools.respond(response("_tour_playback", JSON.stringify({active}), String(active)), e => events.push(e));
+    assert.deepEqual(events[0], {type: "session.update", session: {type: "realtime", audio: {input: {
+      turn_detection: {type: "server_vad", idle_timeout_ms: active ? 9000 : null}
+    }}}});
+  }
 });

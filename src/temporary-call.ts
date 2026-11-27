@@ -2,6 +2,7 @@ import type { AgentIdentity } from "./agent-identity.ts";
 import type { NyxIDConnection } from "./connection.ts";
 import { LocalizedError } from "./i18n.ts";
 import { gatherIce } from "./widget-call.ts";
+import { TabScreenshot } from "./tab-screenshot.ts";
 import { RealtimeTools, type VoiceApplication } from "./realtime-tools.ts";
 
 type Service = AgentIdentity["services"][number];
@@ -15,6 +16,10 @@ export class TemporaryCall {
   #deadline?: number;
   #check?: number;
   #muted = false;
+  readonly screenshots?: TabScreenshot;
+  toggleSharing() {
+    return this.screenshots?.active ? this.screenshots.stop() : this.screenshots?.share(this.#stop.signal);
+  }
 
   readonly #connection: NyxIDConnection;
   readonly #service: Service;
@@ -26,7 +31,8 @@ export class TemporaryCall {
 
   constructor(connection: NyxIDConnection, service: Service, live: (muted: boolean) => void,
     caption: (id: string, speaker: string, text: string) => void, failed: (error: unknown) => void,
-    application?: VoiceApplication, identity?: AgentIdentity) {
+    application?: VoiceApplication, identity?: AgentIdentity, sharingChanged: () => void = () => {}) {
+    if (application?.screenshots && TabScreenshot.supported()) this.screenshots = new TabScreenshot(sharingChanged);
     this.#connection = connection;
     this.#service = service;
     this.#live = live;
@@ -38,7 +44,8 @@ export class TemporaryCall {
 
   async start() {
     const signal = this.#stop.signal;
-    const tools = this.#application && this.#identity && new RealtimeTools(this.#application, this.#connection, this.#identity, signal);
+    const tools = this.#application && this.#identity && new RealtimeTools(this.#application, this.#connection, this.#identity, signal,
+      this.screenshots && (() => this.screenshots!.frame(this.#peer?.sctp?.maxMessageSize ?? 65536)));
     if (!navigator.mediaDevices?.getUserMedia) throw new LocalizedError("microphoneUnavailable");
     if (typeof RTCPeerConnection === "undefined") throw new LocalizedError("voiceUnavailable");
     const media = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
@@ -66,10 +73,15 @@ export class TemporaryCall {
       this.#check = window.setTimeout(() => void this.#checkGrant(), 15_000);
     };
     events.onclose = () => { if (!signal.aborted) this.#failed(new LocalizedError("voiceLost")); };
+    let greeted = false;
     events.onmessage = ({ data }) => {
       if (signal.aborted || typeof data !== "string") return;
       try {
         const event = JSON.parse(data);
+        if (event.type === "session.created" && this.#application?.guidedTour && !greeted) {
+          greeted = true;
+          events.send(JSON.stringify({type: "response.create"}));
+        }
         if (event.type === "response.done" && tools) {
           void tools.respond(event.response, out => events.send(JSON.stringify(out))).catch(error => {
             if (!signal.aborted) this.#failed(error);
@@ -90,7 +102,7 @@ export class TemporaryCall {
       type: "realtime", model: this.#application?.model?.()?.trim() || "gpt-realtime",
       instructions: tools?.instructions ?? "You are a voice assistant. Reply briefly in the language the user speaks.",
       tools: tools?.tools,
-      audio: { input: { transcription: { model: "whisper-1" } } },
+      audio: { input: { ...(this.#application?.guidedTour ? {turn_detection: {type: "server_vad", idle_timeout_ms: 9000}} : {}), transcription: { model: "whisper-1" } } },
     }));
     const response = await this.#connection.requestService(this.#service, ["realtime", "calls"], {
       method: "POST", body: form, signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
@@ -120,6 +132,7 @@ export class TemporaryCall {
   }
   async end() {
     this.#stop.abort();
+    this.screenshots?.stop();
     clearTimeout(this.#deadline);
     clearTimeout(this.#check);
     this.#media?.getTracks().forEach(track => { track.onended = null; track.stop(); });
