@@ -11,7 +11,7 @@ SDK 官网的「免登录试用」可直接读取或切换演示工单的筛选�
 在 HTML 加入一行脚本，页面会出现「Nyx 助手」按钮。脚本也随 npm 包提供，可复制 `browser/nyx-widget.js` 到自己的静态站点。
 
 ```html
-<script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.2.0-alpha.3/browser/nyx-widget.js" data-proxy="/"></script>
+<script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.2.0/browser/nyx-widget.js" data-proxy="/"></script>
 ```
 
 `data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。独立转发服务部署于 chrono-cd，使用 `data-nyxid` 指向服务地址，并设置 `data-verification-origin="https://nyxid.ai"`。任意来源的页面均可接入转发服务。网页挂件和 `BrowserAuthorization` 默认记住本次登录。同一浏览器再次打开页面或刷新时，挂件会自动核验并恢复。显式设置 `data-storage="memory"`（自建 UI 传 `credentialStorage: null`）可仅在当前页面使用授权。默认模式在缺少 Web Locks、Web Crypto 或无法访问本地存储时使用内存。同源标签页按站点配置依次连接并复用已保存的授权。挂件通过 Web Crypto 的 AES-GCM 加密子凭据，密文保存在站点 localStorage，不可导出的密钥存于该源的 IndexedDB。浏览器恢复时先迁移 alpha.4 的明文记录，再向 NyxID 核验。能在同源运行的脚本仍然可以使用已授权的凭据。断开授权会撤销当前子凭据并通知同源标签页。
@@ -40,7 +40,7 @@ SDK 官网的「免登录试用」可直接读取或切换演示工单的筛选�
 
 在 `nyx-ready` 中通过 `host.registerTool` 注册页面工具，文字和临时语音都可以调用。语音工具可以从 `element.context()` 读取当前页面上下文。拥有 `llm-nyx` 授权的临时语音会话还可以把服务请求交给 Nyx，调用范围由当前子凭据决定。持久 Bot 使用 NyxID 中配置的指令与工具。
 
-这个预览版默认使用官方 staging 转发服务，并在 `https://nyxid.ai` 授权。自建转发服务请使用同一版本的 `server/`，在 `SDK_ORIGINS` 中配置页面来源。
+正式版默认使用官方 production 转发服务，并在 `https://nyxid.ai` 授权。自建转发服务请使用同一版本的 `server/`，在 `SDK_ORIGINS` 中配置页面来源。
 
 ## 用 Agent Key 连接 Bot Voice
 
@@ -151,7 +151,7 @@ npm pack
 接入方也可以安装已经发布的固定版本。
 
 ```sh
-npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.2.0-alpha.3/chronoai-nyx-assistant-sdk-0.2.0-alpha.3.tgz
+npm install https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.2.0/chronoai-nyx-assistant-sdk-0.2.0.tgz
 ```
 
 运行端需要 Fetch、Web Streams、Web Crypto 和 AbortSignal.any。应用可以使用自己的聊天界面。
