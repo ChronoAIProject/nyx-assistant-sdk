@@ -1,6 +1,6 @@
 // Realtime can finish generating a response well before its audio finishes playing.
 export class RealtimeTour {
-  #active = true;
+  #active = false;
   #responding = false;
   #playing = false;
   #visitorSpeaking = false;

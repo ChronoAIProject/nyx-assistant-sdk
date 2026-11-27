@@ -90,6 +90,10 @@ test("a guided turn resumes after audio drains, and yields to tools, speech and 
   let next = 0;
   const tour = new RealtimeTour(() => { next++; });
   const emit = (type: string) => tour.observe({type});
+  emit("response.created"); emit("response.done"); emit("output_audio_buffer.stopped");
+  t.mock.timers.tick(10000);
+  assert.equal(next, 0, "wait for the visitor after the greeting");
+  tour.setActive(true);
   emit("response.created");
   emit("output_audio_buffer.started");
   emit("response.done");

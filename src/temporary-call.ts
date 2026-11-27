@@ -87,7 +87,9 @@ export class TemporaryCall {
         tour?.observe(event);
         if (event.type === "session.created" && this.#application?.guidedTour && !greeted) {
           greeted = true;
-          createResponse();
+          events.send(JSON.stringify({type: "response.create", response: {tool_choice: "none",
+            instructions: [tools?.instructions, "Opening greeting only. Introduce yourself briefly in the configured default language, invite the visitor to say Start the tour, then wait for them to speak."].filter(Boolean).join("\n")
+          }}));
         }
         if (event.type === "response.done" && tools) {
           void tools.respond(event.response, out => events.send(JSON.stringify(out))).catch(error => {
