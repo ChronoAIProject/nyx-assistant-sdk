@@ -30,7 +30,7 @@ SDK 官网的「免登录试用」可直接读取或切换演示工单的筛选�
 
 ### 在页面上配置提示词和工具
 
-`data-instructions` 是共用提示词。文字请求会追加 `data-text-instructions`，临时语音拨号时会追加 `data-voice-instructions`。`data-voice-name` 指定语音助手的显示和自称名称。`data-voice-tour="true"` 让导览通话在接通时主动开场，并在静默时继续。设置 `data-voice-screenshot="true"` 可在支持 Capture Handle 的桌面浏览器中共享本页。通话中点击「共享本页画面」并选择当前标签页后，模型能按需调用 `_page_screenshot` 查看压缩 JPEG。挂断或停止共享会释放捕获。临时 OpenAI 通话可通过 `data-voice-model="gpt-realtime-2.1"` 指定接入模型，默认值为 `gpt-realtime`。这些属性可以写在自动挂载的脚本或 `<nyx-assistant>` 上。JavaScript 属性分别为 `instructions`、`textInstructions`、`voiceInstructions`。更新后在下一条文字请求或下次临时通话生效。
+`data-instructions` 是共用提示词。文字请求会追加 `data-text-instructions`，临时语音拨号时会追加 `data-voice-instructions`。`data-voice-name` 指定语音助手的显示和自称名称。`data-voice-tour="true"` 让导览通话在接通时主动开场，并在静默时继续。设置 `data-voice-screenshot="true"` 可在支持 Capture Handle 的桌面浏览器中共享本页。通话中点击「共享本页画面」并选择当前标签页后，模型能按需调用 `_page_screenshot` 查看压缩 JPEG。`data-voice-screenshot-after` 指定成功后附送画面的页面工具名。挂断或停止共享会释放捕获。临时 OpenAI 通话可通过 `data-voice-model="gpt-realtime-2.1"` 指定接入模型，默认值为 `gpt-realtime`。这些属性可以写在自动挂载的脚本或 `<nyx-assistant>` 上。JavaScript 属性分别为 `instructions`、`textInstructions`、`voiceInstructions`。更新后在下一条文字请求或下次临时通话生效。
 
 ```html
 <nyx-assistant data-instructions="你是这个工单页面的助手。"

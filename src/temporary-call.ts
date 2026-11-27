@@ -2,6 +2,7 @@ import type { AgentIdentity } from "./agent-identity.ts";
 import type { NyxIDConnection } from "./connection.ts";
 import { LocalizedError } from "./i18n.ts";
 import { gatherIce } from "./widget-call.ts";
+import { RealtimeTour } from "./realtime-tour.ts";
 import { TabScreenshot } from "./tab-screenshot.ts";
 import { RealtimeTools, type VoiceApplication } from "./realtime-tools.ts";
 
@@ -44,8 +45,6 @@ export class TemporaryCall {
 
   async start() {
     const signal = this.#stop.signal;
-    const tools = this.#application && this.#identity && new RealtimeTools(this.#application, this.#connection, this.#identity, signal,
-      this.screenshots && (() => this.screenshots!.frame(this.#peer?.sctp?.maxMessageSize ?? 65536)));
     if (!navigator.mediaDevices?.getUserMedia) throw new LocalizedError("microphoneUnavailable");
     if (typeof RTCPeerConnection === "undefined") throw new LocalizedError("voiceUnavailable");
     const media = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
@@ -67,6 +66,13 @@ export class TemporaryCall {
       if (!signal.aborted && peer.connectionState === "failed") this.#failed(new LocalizedError("voiceLost"));
     };
     const events = peer.createDataChannel("oai-events");
+    const createResponse = () => {
+      if (!signal.aborted && events.readyState === "open") events.send(JSON.stringify({type: "response.create"}));
+    };
+    const tour = this.#application?.guidedTour ? new RealtimeTour(createResponse) : undefined;
+    signal.addEventListener("abort", () => tour?.setActive(false), {once: true});
+    const tools = this.#application && this.#identity && new RealtimeTools(this.#application, this.#connection, this.#identity, signal,
+      this.screenshots && (() => this.screenshots!.frame(this.#peer?.sctp?.maxMessageSize ?? 65536)), tour && (active => tour.setActive(active)));
     events.onopen = () => {
       clearTimeout(this.#deadline);
       this.#live(this.#muted);
@@ -78,9 +84,10 @@ export class TemporaryCall {
       if (signal.aborted || typeof data !== "string") return;
       try {
         const event = JSON.parse(data);
+        tour?.observe(event);
         if (event.type === "session.created" && this.#application?.guidedTour && !greeted) {
           greeted = true;
-          events.send(JSON.stringify({type: "response.create"}));
+          createResponse();
         }
         if (event.type === "response.done" && tools) {
           void tools.respond(event.response, out => events.send(JSON.stringify(out))).catch(error => {
@@ -102,7 +109,7 @@ export class TemporaryCall {
       type: "realtime", model: this.#application?.model?.()?.trim() || "gpt-realtime",
       instructions: tools?.instructions ?? "You are a voice assistant. Reply briefly in the language the user speaks.",
       tools: tools?.tools,
-      audio: { input: { ...(this.#application?.guidedTour ? {turn_detection: {type: "server_vad", idle_timeout_ms: 9000}} : {}), transcription: { model: "whisper-1" } } },
+      audio: { input: { transcription: { model: "whisper-1" } } },
     }));
     const response = await this.#connection.requestService(this.#service, ["realtime", "calls"], {
       method: "POST", body: form, signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),

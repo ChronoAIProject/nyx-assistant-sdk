@@ -32,9 +32,16 @@ export class TabScreenshot {
       this.#changed();
     } catch (error) { stream.getTracks().forEach(t => t.stop()); this.stop(); throw error; }
   }
-  frame(maxMessageSize: number) {
+  async frame(maxMessageSize: number) {
     const video = this.#video;
     if (!this.active || this.#track?.getCaptureHandle?.()?.handle !== this.#handle || video.readyState < 2) return;
+    if (video.requestVideoFrameCallback) {
+      await new Promise<void>(resolve => {
+        const callback = video.requestVideoFrameCallback(() => { clearTimeout(limit); resolve(); });
+        const limit = setTimeout(() => { video.cancelVideoFrameCallback(callback); resolve(); }, 650);
+      });
+    }
+    if (!this.active || this.#track?.getCaptureHandle?.()?.handle !== this.#handle) return;
     const canvas = document.createElement("canvas");
     let scale = Math.min(1, 1024 / Math.max(video.videoWidth, video.videoHeight));
     const ctx = canvas.getContext("2d");

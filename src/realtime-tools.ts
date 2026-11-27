@@ -6,6 +6,7 @@ export interface VoiceApplication {
   host: AssistantHost;
   instructions(): string;
   screenshots?: boolean;
+  captureAfter?: string;
   name?: string;
   guidedTour?: boolean;
   model?(): string | undefined;
@@ -24,17 +25,19 @@ const completed = z.object({
 export class RealtimeTools {
   readonly instructions: string;
   readonly tools: { type: "function"; name: string; description: string; parameters: Record<string, unknown> }[];
-  readonly #guidedTour: boolean;
-  readonly #screenshot?: () => string | undefined;
+  readonly #setTourActive?: (active: boolean) => void;
+  readonly #captureAfter?: string;
+  readonly #screenshot?: () => Promise<string | undefined> | string | undefined;
   readonly #page: ReturnType<AssistantHost["captureTools"]>;
   readonly #askNyx?: (request: string) => Promise<string>;
   readonly #signal: AbortSignal;
   readonly #calls = new Set<string>();
   #queue = Promise.resolve();
 
-  constructor(app: VoiceApplication, connection: NyxIDConnection, identity: AgentIdentity, signal: AbortSignal, screenshot?: () => string | undefined) {
-    this.#guidedTour = !!app.guidedTour;
+  constructor(app: VoiceApplication, connection: NyxIDConnection, identity: AgentIdentity, signal: AbortSignal, screenshot?: () => Promise<string | undefined> | string | undefined, setTourActive?: (active: boolean) => void) {
+    this.#setTourActive = setTourActive;
     this.#screenshot = screenshot;
+    this.#captureAfter = app.captureAfter;
     this.#signal = signal;
     this.#page = app.host.captureTools();
     const instructions = app.instructions();
@@ -46,7 +49,7 @@ export class RealtimeTools {
     const descriptors: ToolDescription[] = [...this.#page.tools, {
       name: "_page_context", description: "Read the current application context.", inputSchema: z.toJSONSchema(empty),
     }];
-    if (app.guidedTour) descriptors.push({name: "_tour_playback", description: "Pause automatic tour turns when asked to pause, or resume them when asked to continue.", inputSchema: z.toJSONSchema(playback)});
+    if (setTourActive) descriptors.push({name: "_tour_playback", description: "Pause automatic tour turns when asked to pause, or resume them when asked to continue.", inputSchema: z.toJSONSchema(playback)});
     if (screenshot) descriptors.push({name: "_page_screenshot", description: "Look at a fresh image of the shared dashboard tab.", inputSchema: z.toJSONSchema(empty)});
     const services = [...new Set(identity.services.filter(s => s.active).map(s => s.catalogSlug ?? s.slug))];
     const service = nyxChatConnection(identity);
@@ -99,18 +102,17 @@ export class RealtimeTools {
         let result: ToolResult;
         let image: string | undefined;
         try {
-          if (this.#guidedTour && call.name === "_tour_playback") {
+          if (this.#setTourActive && call.name === "_tour_playback") {
             const {active} = playback.parse(JSON.parse(call.arguments!));
-            send({type: "session.update", session: {type: "realtime", audio: {input: {
-              turn_detection: {type: "server_vad", idle_timeout_ms: active ? 9000 : null}
-            }}}});
+            this.#setTourActive(active);
             result = {ok: true, value: {active}};
           } else if (this.#screenshot && call.name === "_page_screenshot" && empty.safeParse(JSON.parse(call.arguments!)).success) {
-            image = this.#screenshot();
+            image = await this.#screenshot();
             result = image ? {ok: true, value: "The next message contains the current tab image."} :
               {ok: false, code: "unavailable", message: "Current-tab pixels unavailable. Continue with the page tools."};
           } else {
             result = await this.#invoke(call.name!, call.arguments!);
+            if (result.ok && call.name === this.#captureAfter) image = await this.#screenshot?.();
           }
         }
         catch { result = { ok: false, code: "outcome_unknown", message: "Could not confirm the tool result." }; }
