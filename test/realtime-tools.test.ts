@@ -116,7 +116,7 @@ test("a guided turn resumes after audio drains, and yields to tools, speech and 
 
 test("briefings belong to an active tour and reach only its natural continuations", t => {
   t.mock.timers.enable({apis: ["setTimeout"]});
-  const periods: AbortSignal[] = [], turns: (string | undefined)[] = [];
+  const periods: AbortSignal[] = [], turns: unknown[] = [];
   let reads = 0;
   const tour = new RealtimeTour(note => turns.push(note), signal => {
     periods.push(signal);
@@ -142,4 +142,18 @@ test("briefings belong to an active tour and reach only its natural continuation
   assert.equal(periods.length, 2);
   tour.observe({type: "response.done"}); tick();
   assert.deepEqual(turns, ["a".repeat(384), undefined]);
+});
+
+
+test("a tour lookup requests one silent call to the named page tool", () => {
+  const {host, bind} = setup();
+  host.registerTool({name: "lookup", description: "Read a record", parameters: z.object({}),
+    execute: () => ({ok: true, value: "record"})});
+  const tools = bind();
+  const update = tools.tourResponse({summary: "batch=B1", lookupTool: "lookup"});
+  assert.deepEqual(update.tool_choice, {type: "function", name: "lookup"});
+  assert.deepEqual(update.output_modalities, ["text"]);
+  assert.match(update.instructions, /batch=B1/);
+  assert.equal(tools.tourResponse("quiet").tool_choice, undefined);
+  assert.equal(tools.tourResponse({summary:"batch=B1", lookupTool:"_tour_playback"}).tool_choice, undefined);
 });
