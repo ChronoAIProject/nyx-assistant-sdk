@@ -7,6 +7,7 @@ import { widgetStyle } from "./widget-style.ts";
 import { renderAssistantMarkdown } from "./markdown.ts";
 
 import { WidgetVoice } from "./widget-voice.ts";
+import type { TourBriefings } from "./realtime-tour.ts";
 
 type BrowserGrant = Awaited<ReturnType<BrowserAuthorization["connect"]>>;
 
@@ -29,6 +30,7 @@ export class NyxAssistantElement extends HTMLElement {
   declare instructions?: string;
   declare textInstructions?: string;
   declare voiceInstructions?: string;
+  declare tourBriefings?: TourBriefings;
   #instructions(mode: "text" | "voice") {
     const specific = mode === "text" ? this.textInstructions ?? this.dataset.textInstructions :
       this.voiceInstructions ?? this.dataset.voiceInstructions;
@@ -268,7 +270,9 @@ export class NyxAssistantElement extends HTMLElement {
     this.#host = host;
     this.#grant = grant;
     this.#voice.setConnection(connection, grant?.access.managementUrl, grant ? this.#voiceService : "auto",
-      { host, name: this.dataset.voiceName?.trim(), captureAfter: this.dataset.voiceScreenshotAfter, guidedTour: this.dataset.voiceTour === "true", screenshots: this.dataset.voiceScreenshot === "true", instructions: () => this.#instructions("voice"), model: () => this.dataset.voiceModel });
+      { host, name: this.dataset.voiceName?.trim(), captureAfter: this.dataset.voiceScreenshotAfter, guidedTour: this.dataset.voiceTour === "true",
+        tourBriefings: signal => this.tourBriefings?.(signal) ?? (() => undefined),
+        screenshots: this.dataset.voiceScreenshot === "true", instructions: () => this.#instructions("voice"), model: () => this.dataset.voiceModel });
     if (grant) {
       this.#el(".access p").textContent = grant.access.services.join(this.#text("separator"));
       this.#el<HTMLAnchorElement>(".access a").href = grant.access.managementUrl;
