@@ -14,7 +14,7 @@
 <script defer src="https://cdn.jsdelivr.net/gh/ChronoAIProject/nyx-assistant-sdk@v0.1.0-alpha.8/browser/nyx-widget.js" data-proxy="/"></script>
 ```
 
-`data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。独立转发服务部署于 chrono-cd，使用 `data-nyxid` 指向服务地址，并设置 `data-verification-origin="https://nyxid.ai"`。部署方通过 `SDK_ORIGINS` 配置接入站点。挂件默认使用内存。设置 `data-storage="local"` 需要浏览器支持 Web Locks。同源标签页按站点配置依次连接并复用已保存的授权。挂件通过 Web Crypto 的 AES-GCM 加密子凭据，密文保存在站点 localStorage，不可导出的密钥存于该源的 IndexedDB。浏览器恢复时先迁移 alpha.4 的明文记录，再向 NyxID 核验。能在同源运行的脚本仍然可以使用已授权的凭据。断开授权会撤销当前子凭据并通知同源标签页。
+`data-proxy="/"` 使用本站已有授权的 NyxID 服务代理，网页示例包含一个只监听本机的实现。完全静态的站点可将该属性替换为 `data-nyxid="https://你的-NyxID-地址"`，用户点「连接 NyxID」后，在 NyxID 核对授权码并批准已有 Key。登录页与 API 分属不同站点时，设置 `data-verification-origin` 为登录页的源。独立转发服务部署于 chrono-cd，使用 `data-nyxid` 指向服务地址，并设置 `data-verification-origin="https://nyxid.ai"`。任意来源的页面均可接入转发服务。挂件默认使用内存。设置 `data-storage="local"` 需要浏览器支持 Web Locks。同源标签页按站点配置依次连接并复用已保存的授权。挂件通过 Web Crypto 的 AES-GCM 加密子凭据，密文保存在站点 localStorage，不可导出的密钥存于该源的 IndexedDB。浏览器恢复时先迁移 alpha.4 的明文记录，再向 NyxID 核验。能在同源运行的脚本仍然可以使用已授权的凭据。断开授权会撤销当前子凭据并通知同源标签页。
 
 `data-services` 用逗号分隔此应用需要的服务，默认是 `llm-nyx,chrono-llm-public`。`data-key-source="new"` 在 NyxID 授权页预填创建专用 Key，默认预选已有 Key。批准后的实际权限由挂件按此服务列表核验。未完成的申请保存在当前标签页，刷新后点连接可以继续原申请。自有 UI 可从 `@chronoai/nyx-assistant-sdk/agent-key` 导入 `BrowserAuthorization`，传入 NyxID 的 `base`、登录页 `verificationOrigin`、`services` 和 `clientLabel`；`connect(signal, showLink)` 提供授权链接，`restore(signal)` 恢复并核验已存凭据。返回的 `connection` 可直接创建聊天适配器。
 
